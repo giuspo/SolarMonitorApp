@@ -1,0 +1,5 @@
+# Adafruit IO Configuration
+# Modifica questi valori per cambiare l'endpoint API
+
+substitutions:
+  adafruit_full_url: "https://io.adafruit.com/api/v2/giuspo/feeds/solar-data-logger/data"

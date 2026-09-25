@@ -1,0 +1,361 @@
+# ESPHome WiFi Test Project
+esphome:
+  name: wifi-test
+  friendly_name: WiFi Test
+
+packages:
+  adafruit_config: !include config.yaml
+
+esp32:
+  board: esp32dev
+  framework:
+    type: arduino
+
+logger:
+  level: DEBUG
+  logs:
+    ADAFRUIT: DEBUG
+
+ota:
+  - platform: esphome
+    password: !secret ota_password
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  ap:
+    ssid: "WiFi-Test Fallback"
+    password: !secret fallback_password
+  # Wi‑Fi state callbacks for LED indication
+  on_connect:
+    then:
+      - script.execute: wifi_connected
+  on_disconnect:
+    then:
+      - script.execute: wifi_error
+  on_ap_fallback:
+    then:
+      - script.execute: wifi_connecting
+
+captive_portal:
+
+# ABILITIAMO LE RICHIESTE HTTP
+http_request:
+  timeout: 10s
+
+# I SENSORI TORNANO AD ESSERE PURAMENTE LOCALI
+sensor:
+  - platform: wifi_signal
+    name: "WiFi Signal Strength"
+    id: rssi_signal
+    update_interval: 5s
+    unit_of_measurement: "dBm"
+    accuracy_decimals: 0
+
+  - platform: ina226
+    address: 0x41
+    i2c_id: i2c_solar
+    # Shunt interno per range ±10 A (5 mΩ)
+    shunt_resistance: 0.005 ohm
+    bus_voltage:
+      name: "Tensione Pannello"
+      id: panel_voltage
+    current:
+      name: "Corrente Pannello"
+      id: panel_current
+      # Log raw current value for debugging
+      on_value:
+        then:
+          - lambda: |-
+              ESP_LOGD("DEBUG_INA226", "Raw panel current: %.6f A", id(panel_current).state);
+    power:
+      name: "Potenza Pannello"
+      id: panel_power
+    update_interval: 30s
+
+  # Sensore INA226 per la batteria (indirizzo 0x41, bus I2C separato)
+  - platform: ina226
+    address: 0x41
+    i2c_id: i2c_battery
+    # Shunt interno per range ±10 A (5 mΩ)
+    shunt_resistance: 0.005 ohm
+    # Impostiamo il range di corrente a ±10 A (risoluzione 0.32 mA)
+    max_current: 10.0
+    bus_voltage:
+      name: "Tensione Batteria"
+      id: battery_voltage
+    current:
+      name: "Corrente Batteria"
+      id: battery_current
+      # Log raw current value for debugging
+      on_value:
+        then:
+          - lambda: |-
+              ESP_LOGD("DEBUG_INA226", "Raw battery current: %.6f A", id(battery_current).state);
+    power:
+      name: "Potenza Batteria"
+      id: battery_power
+    update_interval: 30s
+
+# Configurazione I2C per INA226
+i2c:
+  - id: i2c_solar
+    sda: GPIO21
+    scl: GPIO22
+    scan: true
+    frequency: 400kHz
+  - id: i2c_battery
+    sda: GPIO17
+    scl: GPIO16
+    scan: true
+    frequency: 400kHz
+
+# Define binary outputs for LEDs
+output:
+  - platform: gpio
+    pin: GPIO2
+    id: status_led_output_wifi
+  - platform: gpio
+    pin: GPIO4
+    id: status_led_output_adafruit
+
+# Define binary lights using the outputs
+light:
+  - platform: binary
+    name: "WiFi Status LED"
+    output: status_led_output_wifi
+    id: wifi_status_led
+  - platform: binary
+    name: "Adafruit Status LED"
+    output: status_led_output_adafruit
+    id: adafruit_status_led
+
+web_server:
+  port: 80
+  version: 2
+
+# Sincronizzazione orario
+time:
+  - platform: sntp
+    id: sntp_time
+    timezone: Europe/Rome
+    servers:
+      - 0.pool.ntp.org
+      - 1.pool.ntp.org
+      - 2.pool.ntp.org
+    on_time:
+      - seconds: 0
+        minutes: /1
+        then:
+          - lambda: |-
+              ESP_LOGI("SNTP", "Orario sincronizzato: %lld (firmware v2.2)", (long long)id(sntp_time).now().timestamp);
+    on_time_sync:
+      then:
+        - lambda: |-
+            if (id(sntp_time).now().is_valid()) {
+              ESP_LOGI("SNTP", "Orario sincronizzato: %lld (firmware v2.2)", (long long)id(sntp_time).now().timestamp);
+            } else {
+              ESP_LOGE("SNTP", "Errore di sincronizzazione SNTP. Controllare la connettività.");
+            }
+
+# Script per inviare dati ad Adafruit con controllo SNTP
+script:
+  # Wi‑Fi status LED patterns
+  - id: wifi_connecting
+    then:
+      - light.turn_off: adafruit_status_led
+      - light.turn_on:
+          id: wifi_status_led
+          flash_length: 500ms  # slow blink (~0.5 Hz)
+  - id: wifi_connected
+    then:
+      - light.turn_off: adafruit_status_led
+      - light.turn_on:
+          id: wifi_status_led
+          flash_length: 0s  # solid on
+  - id: wifi_error
+    then:
+      - light.turn_off: adafruit_status_led
+      - light.turn_on:
+          id: wifi_status_led
+          flash_length: 200ms  # fast blink (~2 Hz)
+  # Adafruit upload success indication
+  - id: adafruit_ok
+    then:
+      - light.turn_off: wifi_status_led
+      - repeat:
+          count: 2
+          then:
+            - light.turn_on: adafruit_status_led
+            - delay: 200ms
+            - light.turn_off: adafruit_status_led
+            - delay: 200ms
+  - id: send_to_adafruit
+    then:
+      - lambda: |-
+          auto now_obj = id(sntp_time).now();
+          // Controllo robusto: verifica validità e timestamp non troppo vecchio (dopo Gennaio 2021)
+          if(!now_obj.is_valid() || now_obj.timestamp < 1609459200)
+          {
+            ESP_LOGW("ADAFRUIT", "SNTP non sincronizzato o timestamp troppo vecchio, skip invio dati");
+            return;
+          }
+          id(do_send).execute();
+
+  - id: do_send
+    mode: queued
+    then:
+      - http_request.post:
+          url: ${adafruit_full_url}
+          request_headers:
+            X-AIO-Key: !secret adafruit_aio_key
+            Content-Type: "application/json"
+          body: !lambda |-
+            auto now_obj = id(sntp_time).now();
+            time_t now = now_obj.timestamp;
+
+            // Dati pannello solare
+            float v_f = -1.0f;
+            float i_f = -1.0f;
+            float w_f = -1.0f;
+            bool valid_f = true;
+
+            // Dati batteria
+            float v_b = -1.0f;
+            float i_b = -1.0f;
+            float w_b = -1.0f;
+            bool valid_b = true;
+
+            int rssi_i = -1;
+
+            // --- Raccolta Dati Pannello Solare ---
+            if(id(panel_voltage).has_state())
+            {
+              v_f = id(panel_voltage).state;
+              if(std::isnan(v_f) || v_f < 0.0f || v_f > 60.0f)
+              {
+                ESP_LOGW("ADAFRUIT", "Voltage Pannello out of range: %.2fV", v_f);
+                v_f = -1.0f;
+                valid_f = false;
+              }
+            } else { valid_f = false; }
+
+            if(id(panel_current).has_state())
+            {
+              i_f = id(panel_current).state;
+              if(std::isnan(i_b) || i_b < -10.0f || i_b > 10.0f)
+              {
+                ESP_LOGW("ADAFRUIT", "Current Pannello out of range: %.2fA", i_f);
+                i_f = -1.0f;
+                valid_f = false;
+              }
+            } else { valid_f = false; }
+
+            if(id(panel_power).has_state())
+            {
+              w_f = id(panel_power).state;
+              if (std::isnan(w_f) || w_f < 0.0f || w_f > 300.0f) {
+                ESP_LOGW("ADAFRUIT", "Power Pannello out of range: %.2fW", w_f);
+                w_f = -1.0f;
+                valid_f = false;
+              }
+            } else { valid_f = false; }
+
+            // --- Raccolta Dati Batteria ---
+            if(id(battery_voltage).has_state())
+            {
+              v_b = id(battery_voltage).state;
+              if(std::isnan(v_b) || v_b < 0.0f || v_b > 14.0f)
+              {
+                ESP_LOGW("ADAFRUIT", "Voltage Batteria out of range: %.2fV", v_b);
+                v_b = -1.0f;
+                valid_b = false;
+              }
+            } else { valid_b = false; }
+
+            if(id(battery_current).has_state())
+            {
+              i_b = id(battery_current).state;
+              if(std::isnan(i_b) || i_b < -10.0f || i_b > 10.0f)
+              {
+                ESP_LOGW("ADAFRUIT", "Current Batteria out of range: %.2fA", i_b);
+                i_b = -1.0f;
+                valid_b = false;
+              }
+            } else { valid_b = false; }
+
+            if(id(battery_power).has_state())
+            {
+              w_b = id(battery_power).state;
+              if (std::isnan(w_b) || w_b < -100.0f || w_b > 100.0f) {
+                ESP_LOGW("ADAFRUIT", "Power Batteria out of range: %.2fW", w_b);
+                w_b = -1.0f;
+                valid_b = false;
+              }
+            } else { valid_b = false; }
+
+            // --- Raccolta RSSI ---
+            if(id(rssi_signal).has_state())
+            {
+              rssi_i = (int)id(rssi_signal).state;
+            } else { valid_f = false; valid_b = false; }
+
+            // --- Logica di Coerenza Fisica (P = V * I) ---
+            if(valid_f && v_f > 0 && i_f > 0 && w_f > 0)
+            {
+              float calculated_power = v_f * i_f;
+              float power_diff = fabs(w_f - calculated_power);
+              if(power_diff > 10.0f) {
+                ESP_LOGW("ADAFRUIT", "Power mismatch Pannello: %.2fW vs calc %.2fW. Data marked invalid.", w_f, calculated_power);
+                valid_f = false;
+              }
+            }
+            if(valid_b && v_b > 0 && i_b > 0 && w_b > 0)
+            {
+              float calculated_power = v_b * i_b;
+              float power_diff = fabs(w_b - calculated_power);
+              if(power_diff > 10.0f) {
+                ESP_LOGW("ADAFRUIT", "Power mismatch Batteria: %.2fW vs calc %.2fW. Data marked invalid.", w_b, calculated_power);
+                valid_b = false;
+              }
+            }
+            // -------------------------------------------------------
+
+            char v_str[10], i_str[10], w_str[10];
+            snprintf(v_str, sizeof(v_str), "%.2f", v_f);
+            // Use three decimal places for current to capture small values (e.g., 0.005 A)
+            snprintf(i_str, sizeof(i_str), "%.3f", i_f);
+            snprintf(w_str, sizeof(w_str), "%.3f", w_f);
+
+            // Combina la validità dei due sensori
+            bool overall_valid = valid_f && valid_b;
+
+            char v_b_str[10], i_b_str[10], w_b_str[10];
+            snprintf(v_b_str, sizeof(v_b_str), "%.2f", v_b);
+            snprintf(i_b_str, sizeof(i_b_str), "%.3f", i_b);
+            snprintf(w_b_str, sizeof(w_b_str), "%.3f", w_b);
+
+            // Build payload as a JSON string inside the "value" field (required by Adafruit IO JSON feed)
+            char json_buffer[1024];
+            snprintf(json_buffer, sizeof(json_buffer),
+              "{\"value\":\"{\\\"tstamp\\\":%lld,\\\"v_pan\\\":%s,\\\"i_pan\\\":%s,\\\"w_pan\\\":%s,\\\"v_bat\\\":%s,\\\"i_bat\\\":%s,\\\"w_bat\\\":%s,\\\"rssi\\\":%d,\\\"valid\\\":%s}\"}",
+              (long long)now,
+              v_str,
+              i_str,
+              w_str,
+              v_b_str,
+              i_b_str,
+              w_b_str,
+              rssi_i,
+              overall_valid ? "true" : "false");
+
+            ESP_LOGI("ADAFRUIT", "Body inviato: %s", json_buffer);
+            return std::string(json_buffer);
+          # Indica il successo dell'invio a Adafruit
+          - script.execute: adafruit_ok
+
+# Invia dati ogni 30 secondi
+interval:
+  - interval: 30s
+    then:
+      - script.execute: send_to_adafruit

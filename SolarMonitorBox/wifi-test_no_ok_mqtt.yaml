@@ -1,0 +1,113 @@
+# ESPHome WiFi Test Project
+esphome:
+  name: wifi-test
+  friendly_name: WiFi Test
+
+esp32:
+  board: esp32dev
+  framework:
+    type: arduino
+
+logger:
+  level: DEBUG
+
+ota:
+  - platform: esphome
+    password: !secret ota_password
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  ap:
+    ssid: "WiFi-Test Fallback"
+    password: !secret fallback_password
+
+captive_portal:
+
+mqtt:
+  broker: io.adafruit.com
+  port: 1883
+  username: !secret adafruit_username
+  password: !secret adafruit_aio_key
+
+# Disabilitiamo la discovery nativa
+  discovery: false
+  
+  # Invece di lasciarli vuoti, impostiamo i prefissi puntando al TUO feed.
+  # In questo modo, se anche ESPHome provasse a generare qualcosa, rimarrebbe nel recinto di Adafruit.
+  topic_prefix: "giuspo/feeds"
+  discovery_prefix: "giuspo/feeds/discovery"
+
+  # Disabilitiamo i log e i messaggi di stato nativi puntandoli a stringhe che Adafruit non rifiuta,
+  # oppure lasciando che ESPHome usi quelli di default allineati al topic_prefix.
+  birth_message:
+    topic: "giuspo/feeds/status"
+    payload: "online"
+  will_message:
+    topic: "giuspo/feeds/status"
+    payload: "offline"
+
+# I SENSORI TORNANO AD ESSERE PURAMENTE LOCALI
+sensor:
+  - platform: wifi_signal
+    name: "WiFi Signal Strength"
+    id: rssi_signal
+    update_interval: 30s
+    unit_of_measurement: "dBm"
+    accuracy_decimals: 0
+
+  - platform: ina219
+    address: 0x41
+    shunt_resistance: 0.1
+    bus_voltage:
+      name: "Tensione Pannello"
+      id: panel_voltage
+    current:
+      name: "Corrente Pannello"
+      id: panel_current
+    power:
+      name: "Potenza Pannello"
+      id: panel_power
+    update_interval: 30s
+
+# Configurazione I2C per INA219
+i2c:
+  sda: GPIO21
+  scl: GPIO22
+  scan: true
+  frequency: 400kHz
+
+status_led:
+  pin: GPIO2 
+
+web_server:
+  port: 80
+  version: 2
+
+# SPEDIZIONE DATI VIA HTTP API AD ADAFRUIT OGNI 30 SECONDI (PACCHETTO JSON UNICO)
+interval:
+  - interval: 30s
+    then:
+      - if:
+          condition:
+            wifi.connected:
+          then:
+            - mqtt.publish:
+                topic: "giuspo/feeds/solar-scout-json"
+                payload: !lambda |-
+                  char json_buffer[150];
+                  snprintf(json_buffer, sizeof(json_buffer),
+                    "{\"v_pan\":%.2f,\"i_pan\":%.3f,\"w_pan\":%.2f,\"rssi\":%.0f}",
+                    id(panel_voltage).state,
+                    id(panel_current).state,
+                    id(panel_power).state,
+                    id(rssi_signal).state);
+                  return std::string(json_buffer);
+
+# Sincronizzazione orario
+time:
+  - platform: sntp
+    id: sntp_time
+    timezone: Europe/Rome
+    servers:
+      - 0.pool.ntp.org

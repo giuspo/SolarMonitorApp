@@ -1,0 +1,12 @@
+python -m esphome compile wifi-test.yaml
+
+python -m esphome upload wifi-test.yaml
+
+python -m esphome logs wifi-test.yaml
+
+In ambiente virtuale
+.\.venv\Scripts\python.exe -m esphome compile solar-monitor-box.yaml
+
+.\.venv\Scripts\python.exe -m esphome upload solar-monitor-box.yaml
+
+.\.venv\Scripts\python.exe -m esphome logs solar-monitor-box.yaml

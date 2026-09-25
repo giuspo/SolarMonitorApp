@@ -1,0 +1,137 @@
+# ESPHome WiFi Test Project
+esphome:
+  name: wifi-test
+  friendly_name: WiFi Test
+
+esp32:
+  board: esp32dev
+  framework:
+    type: arduino
+
+logger:
+  level: DEBUG
+
+ota:
+  - platform: esphome
+    password: !secret ota_password
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  ap:
+    ssid: "WiFi-Test Fallback"
+    password: !secret fallback_password
+
+captive_portal:
+
+# Aggiungi questo blocco per disattivare la discovery globale di Home Assistant
+api:
+  reboot_timeout: 0s
+
+# Connessione MQTT ad Adafruit IO
+mqtt:
+  broker: io.adafruit.com
+  port: 1883
+  username: !secret adafruit_username
+  password: !secret adafruit_aio_key
+  topic_prefix: giuspo/feeds
+  reboot_timeout: 0s
+  discovery: false
+
+  # SOLUZIONE: Non vuoto, ma spostato su un sotto-feed fittizio valido per Adafruit
+  discovery_prefix: giuspo/feeds/discovery
+  
+  birth_message:
+    topic: giuspo/feeds/status
+    payload: online
+  will_message:
+    topic: giuspo/feeds/status
+    payload: offline
+
+  log_topic: giuspo/feeds/logs
+  on_message: []
+
+# TUTTI I SENSORI SOTTO UN'UNICA CHIAVE
+sensor:
+  # Segnale WiFi (RSSI)
+  - platform: wifi_signal
+    name: "WiFi Signal Strength"
+    update_interval: 30s
+    unit_of_measurement: "dBm"
+    accuracy_decimals: 0
+    filters:
+      - sliding_window_moving_average:
+          window_size: 10
+          send_every: 5
+  # Sensore INA219 per monitoraggio tensione/corrente
+  - platform: ina219
+    address: 0x41
+    shunt_resistance: 0.1
+    bus_voltage:
+      name: "Tensione Pannello"
+      id: panel_voltage
+    current:
+      name: "Corrente Pannello"
+      id: panel_current
+    power:
+      name: "Potenza Pannello"
+      id: panel_power
+    update_interval: 30s
+
+# Indirizzo IP della ESP
+text_sensor:
+ - platform: wifi_info
+   ip_address:
+     name: "ESP IP Address"
+   ssid:
+     name: "Connected SSID"
+
+# Stato della connessione WiFi (on = connesso)
+binary_sensor:
+  - platform: status
+    name: "WiFi Status"
+
+status_led:
+  pin: GPIO2 # LED esterno (cambiare GPIO se necessario)
+
+web_server:
+  port: 80
+  version: 2
+
+# Configurazione I2C per INA219
+i2c:
+  sda: GPIO21
+  scl: GPIO22
+  scan: true
+  frequency: 400kHz
+
+# Log dei valori INA219 sul monitor di debug ogni 30s
+interval:
+  - interval: 30s
+    then:
+      - logger.log:
+          format: "INA219 - V: %.2f V, I: %.3f A, P: %.2f W"
+          args:
+            - id(panel_voltage).state
+            - id(panel_current).state
+            - id(panel_power).state
+          level: INFO
+#  - interval: 5min
+#    then:
+#      # Log dei valori INA219 sul monitor di debug (già presente nel blocco precedente)
+#      - mqtt.publish_json:
+#          topic: "wifi-test"
+#          payload: !lambda |-
+#            root["v_pan"] = id(panel_voltage).state;
+#            root["i_pan"] = id(panel_current).state;
+#            root["w_pan"] = id(panel_power).state;
+
+# Time synchronization per orario corretto
+time:
+  - platform: sntp
+    id: sntp_time
+    timezone: Europe/Rome
+    servers:
+      - 0.pool.ntp.org
+      - 1.pool.ntp.org
+      - 2.pool.ntp.org
