@@ -1,0 +1,28 @@
+client_secret_967808654608-14uptjqij6hr2071ktt0fell7jt6gtll.apps.googleusercontent.com.json
+client_secret_982771788913-gdv77dso6p1k82araami072472b57h8v.apps.googleusercontent.com.json
+
+# Node.js
+node_modules/
+dist/
+dist-ssr/
+build/
+.npm/
+
+# Cloudflare Workers
+.wrangler/
+.dev.vars
+
+# ESPHome Secrets
+SolarMonitorBox/secrets.yaml
+SolarMonitorBox/*.pem
+SolarMonitorBox/*.json
+
+# React / Vite
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Database Backups
+SolarDashboard/backend/backups/
