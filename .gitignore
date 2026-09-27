@@ -26,3 +26,4 @@ SolarMonitorBox/*.json
 
 # Database Backups
 SolarDashboard/backend/backups/
+SolarDashboard/frontend/.env.production

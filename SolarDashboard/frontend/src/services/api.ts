@@ -1,4 +1,4 @@
-﻿const API_BASE = 'http://localhost:8787/api';
+﻿const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8787/api';
 
 async function fetchWithAuth(endpoint: string, options: RequestInit = {}) {
   const token = localStorage.getItem('apiToken');
@@ -29,6 +29,7 @@ export const api = {
   getHistoryRange: (start: string, end: string) => fetchWithAuth(`/history-range?start=${start}&end=${end}`),
   syncData: () => fetchWithAuth('/sync', { method: 'POST' })
 };
+
 
 
 

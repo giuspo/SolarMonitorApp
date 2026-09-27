@@ -12,4 +12,4 @@ crons = ["*/15 * * * *"]
 [[d1_databases]]
 binding = "DB"
 database_name = "solar-db"
-database_id = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+database_id = "bd35fbfe-9bec-4faa-bc8f-6c5f7da845cc"

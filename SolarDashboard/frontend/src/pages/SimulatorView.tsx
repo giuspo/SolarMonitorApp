@@ -240,16 +240,13 @@ export default function SimulatorView() {
     const paybackYears = yearlySavings > 0 ? systemCost / yearlySavings : 0;
     
     let idealBatSum = 0;
-    let maxBatSum = 0;
     let daysCount = 0;
     Object.values(dailyStats).forEach((s: any) => {
       idealBatSum += Math.min(s.surplus, s.deficit);
-      maxBatSum += s.maxBat;
       daysCount++;
     });
     
     const suggestedBatWh = daysCount > 0 ? (idealBatSum / daysCount) : 0;
-    const avgMaxBat = daysCount > 0 ? (maxBatSum / daysCount) : 0;
     
     let batStatus = "Non presente";
     if (batteryCapacityWh > 0) {
@@ -484,6 +481,7 @@ export default function SimulatorView() {
     </div>
   );
 }
+
 
 
 

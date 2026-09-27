@@ -34,3 +34,7 @@ CREATE TABLE IF NOT EXISTS authorized_users (
     email TEXT PRIMARY KEY,             -- Email dell'utente abilitato
     added_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Inserisci qui la tua email Google per essere autorizzato al login
+INSERT OR IGNORE INTO authorized_users (email) VALUES ('giuliosporti@gmail.com');
+
