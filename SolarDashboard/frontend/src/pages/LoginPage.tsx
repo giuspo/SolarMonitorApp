@@ -1,4 +1,4 @@
-import { useState } from 'react';
+﻿import { useState } from 'react';
 import { GoogleLogin } from '@react-oauth/google';
 import { Sun } from 'lucide-react';
 
@@ -7,8 +7,8 @@ export default function LoginPage({ onLogin }: { onLogin: (t: string) => void })
 
   const handleSuccess = async (credentialResponse: any) => {
     try {
-      // Sostituisci localhost con il tuo URL Cloudflare in produzione
-      const res = await fetch('http://localhost:8787/api/auth/social-login', {
+      const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8787/api';
+      const res = await fetch(`${API_BASE}/auth/social-login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ idToken: credentialResponse.credential })
@@ -45,3 +45,6 @@ export default function LoginPage({ onLogin }: { onLogin: (t: string) => void })
     </div>
   );
 }
+
+
+
