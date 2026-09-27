@@ -1,6 +1,6 @@
 ﻿import { useState } from 'react';
 import { GoogleLogin } from '@react-oauth/google';
-import { Sun } from 'lucide-react';
+
 
 export default function LoginPage({ onLogin }: { onLogin: (t: string) => void }) {
   const [error, setError] = useState('');
@@ -28,8 +28,8 @@ export default function LoginPage({ onLogin }: { onLogin: (t: string) => void })
 
   return (
     <div className="flex-grow flex flex-col items-center justify-center p-6 text-center">
-      <Sun className="w-20 h-20 text-yellow-400 mb-6" />
-      <h1 className="text-3xl font-bold mb-2">SolarMonitor</h1>
+      <img src="/logo.png" alt="Solar Monitor Box" className="w-28 h-28 rounded-3xl shadow-2xl mb-6 ring-2 ring-amber-400/20 shadow-amber-500/10 object-cover" />
+      <h1 className="text-3xl font-bold mb-2 text-slate-100">Solar Monitor Box</h1>
       <p className="text-slate-400 mb-8">Accedi per visualizzare la dashboard</p>
       
       <div className="bg-slate-800 p-6 rounded-2xl shadow-xl w-full max-w-sm">
@@ -45,6 +45,9 @@ export default function LoginPage({ onLogin }: { onLogin: (t: string) => void })
     </div>
   );
 }
+
+
+
 
 
 

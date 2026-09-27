@@ -67,9 +67,12 @@ export default function TodayView({ onLogout }: { onLogout: () => void }) {
   return (
     <div className="p-4 flex flex-col gap-6 pb-24">
       <header className="flex justify-between items-center mt-2">
-        <div>
-          <h1 className="text-2xl font-bold">Oggi</h1>
-          <p className="text-slate-400 text-sm">Dashboard Solare</p>
+        <div className="flex items-center gap-3">
+          <img src="/logo.png" alt="Logo" className="w-10 h-10 rounded-xl ring-1 ring-amber-400/30 object-cover shadow-md" />
+          <div>
+            <h1 className="text-xl font-bold leading-tight">Oggi</h1>
+            <p className="text-slate-400 text-xs font-medium">Solar Monitor Box</p>
+          </div>
         </div>
         <div className="flex gap-2">
           <button onClick={handleSync} disabled={syncing} className="p-2 bg-slate-800 rounded-full text-slate-300">
@@ -177,6 +180,7 @@ export default function TodayView({ onLogout }: { onLogout: () => void }) {
     </div>
   );
 }
+
 
 
 
