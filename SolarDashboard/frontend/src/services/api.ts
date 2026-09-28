@@ -27,8 +27,12 @@ export const api = {
   getHistoryDay: (date: string) => fetchWithAuth('/history/' + date),
   getHistoryMonth: (month: string) => fetchWithAuth('/history-month/' + month),
   getHistoryRange: (start: string, end: string) => fetchWithAuth(`/history-range?start=${start}&end=${end}`),
-  syncData: () => fetchWithAuth('/sync', { method: 'POST' })
+  syncData: () => fetchWithAuth('/sync', { method: 'POST' }),
+  getStatus: () => fetchWithAuth('/status')
 };
+
+
+
 
 
 

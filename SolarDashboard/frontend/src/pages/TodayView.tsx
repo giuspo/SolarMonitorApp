@@ -31,7 +31,7 @@ export default function TodayView({ onLogout }: { onLogout: () => void }) {
       let peakTime = '--:--';
       let maxW = -1;
 
-      const formattedChart = (res.chartData || []).map((d: any) => {
+      const formattedChart = (res.chartData || []).filter((d: any) => d.is_valid !== 0 && d.is_valid !== false).map((d: any) => {
         const time = new Date(d.datetime_local).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
         
         if (d.w_pan !== undefined && d.w_pan !== null && Number(d.w_pan) > maxW) {
@@ -221,6 +221,7 @@ export default function TodayView({ onLogout }: { onLogout: () => void }) {
     </div>
   );
 }
+
 
 
 

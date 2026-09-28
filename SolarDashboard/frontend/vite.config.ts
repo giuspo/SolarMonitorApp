@@ -3,6 +3,9 @@ import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig({
+  define: {
+    __APP_VERSION__: JSON.stringify(process.env.npm_package_version),
+  },
   plugins: [
     react(),
     VitePWA({
@@ -33,3 +36,5 @@ export default defineConfig({
     })
   ],
 });
+
+

@@ -1,4 +1,5 @@
 ﻿import { Hono } from 'hono';
+import { APP_VERSION } from './version';
 import { cors } from 'hono/cors';
 import { fetchAdafruitData } from './adafruit';
 import { saveRecordsToD1, updateDailySummary } from './db';
@@ -23,7 +24,7 @@ app.use('/api/*', cors({
 }));
 
 // --- ROUTE PUBBLICHE ---
-app.get('/api/status', (c) => c.json({ status: 'ok' }));
+app.get('/api/status', (c) => c.json({ status: 'ok', version: APP_VERSION }));
 
 app.post('/api/auth/social-login', async (c) => {
   const body = await c.req.json();
@@ -137,6 +138,7 @@ export default {
     } catch (e) {}
   }
 };
+
 
 
 
