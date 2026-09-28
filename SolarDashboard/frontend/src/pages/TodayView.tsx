@@ -1,5 +1,5 @@
 ﻿import React, { useState, useEffect } from 'react';
-import { LogOut, Zap, Battery, Cloud, RefreshCw, Sun, BatteryCharging, Maximize2, Minimize2 } from 'lucide-react';
+import { LogOut, Zap, Battery, Cloud, RefreshCw, Sun, BatteryCharging, Maximize2, Minimize2 , BatteryFull, BatteryMedium, BatteryLow, BatteryWarning } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine, Legend, Brush } from 'recharts';
 import { api } from '../services/api';
 
@@ -74,6 +74,25 @@ export default function TodayView({ onLogout }: { onLogout: () => void }) {
   const summary = data?.summary || {};
   const chartData = data?.chart || [];
   const peakTime = data?.peakTime || '--:--';
+  const lastRecord = chartData && chartData.length > 0 ? chartData[chartData.length - 1] : null;
+  const currentVBat = lastRecord ? lastRecord.v_bat : null;
+  let soc = '--';
+  let BatteryIcon = Battery;
+  let socColor = 'text-emerald-400';
+  let socBg = 'bg-emerald-900/40';
+
+  if (currentVBat) {
+    if (currentVBat >= 13.4) { soc = '100'; BatteryIcon = BatteryFull; socColor = 'text-emerald-400'; socBg = 'bg-emerald-900/40'; }
+    else if (currentVBat >= 13.3) { soc = '90'; BatteryIcon = BatteryFull; socColor = 'text-emerald-400'; socBg = 'bg-emerald-900/40'; }
+    else if (currentVBat >= 13.2) { soc = '80'; BatteryIcon = BatteryFull; socColor = 'text-emerald-400'; socBg = 'bg-emerald-900/40'; }
+    else if (currentVBat >= 13.1) { soc = '70'; BatteryIcon = BatteryMedium; socColor = 'text-emerald-400'; socBg = 'bg-emerald-900/40'; }
+    else if (currentVBat >= 13.0) { soc = '50'; BatteryIcon = BatteryMedium; socColor = 'text-yellow-400'; socBg = 'bg-yellow-900/40'; }
+    else if (currentVBat >= 12.9) { soc = '40'; BatteryIcon = BatteryMedium; socColor = 'text-yellow-400'; socBg = 'bg-yellow-900/40'; }
+    else if (currentVBat >= 12.8) { soc = '30'; BatteryIcon = BatteryLow; socColor = 'text-orange-400'; socBg = 'bg-orange-900/40'; }
+    else if (currentVBat >= 12.5) { soc = '20'; BatteryIcon = BatteryLow; socColor = 'text-orange-400'; socBg = 'bg-orange-900/40'; }
+    else if (currentVBat >= 12.0) { soc = '10'; BatteryIcon = BatteryWarning; socColor = 'text-red-400'; socBg = 'bg-red-900/40'; }
+    else { soc = '0'; BatteryIcon = BatteryWarning; socColor = 'text-red-500'; socBg = 'bg-red-900/40'; }
+  }
 
   return (
     <div className="p-4 flex flex-col gap-6 pb-24">
@@ -81,8 +100,8 @@ export default function TodayView({ onLogout }: { onLogout: () => void }) {
         <div className="flex items-center gap-3">
           <img src="/logo.png" alt="Logo" className="w-10 h-10 rounded-xl ring-1 ring-amber-400/30 object-cover shadow-md" />
           <div>
-            <h1 className="text-xl font-bold leading-tight">Oggi</h1>
-            <p className="text-slate-400 text-xs font-medium">Solar Monitor Box</p>
+            <h1 className="text-xl font-bold leading-tight">Oggi <span className="text-sm font-normal text-slate-400 ml-1">({new Date().toLocaleDateString('it-IT')})</span></h1>
+            <p className="text-slate-400 text-xs font-medium">{lastRecord ? `Ultimo dato: ${new Date(lastRecord.datetime_local).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}` : 'Solar Monitor Box'}</p>
           </div>
         </div>
         <div className="flex gap-2">
@@ -141,21 +160,24 @@ export default function TodayView({ onLogout }: { onLogout: () => void }) {
           </div>
         </div>
 
-        {/* Card 4: Tensione Batteria */}
-        <div className="bg-slate-800 p-4 rounded-2xl border border-slate-700 flex flex-col justify-between">
-          <div>
-            <Battery className="w-6 h-6 text-emerald-400 mb-2" />
-            <p className="text-sm text-slate-400">Tensione (Max)</p>
-            <p className="text-2xl font-bold text-emerald-400">{summary.v_bat_max ? summary.v_bat_max.toFixed(2) : '--'} <span className="text-sm font-normal text-slate-300">V</span></p>
-          </div>
-          <div className="mt-2 pt-2 border-t border-slate-700/50">
-            <p className="text-xs text-slate-400 flex items-center justify-between">
-              <span>Minima:</span> 
-              <span className="font-bold text-sky-400">{summary.v_bat_min ? summary.v_bat_min.toFixed(2) : '--'} V</span>
-            </p>
+                  {/* Card 4: Tensione Batteria */}
+          <div className="bg-slate-800 p-4 rounded-2xl border border-slate-700 flex flex-col justify-between">
+            <div>
+              <div className="flex justify-between items-start mb-2">
+                <BatteryIcon className={`w-6 h-6 ${socColor}`} />
+                <span className={`text-xs font-bold ${socColor} ${socBg} px-2 py-1 rounded-full`}>{soc}%</span>
+              </div>
+              <p className="text-sm text-slate-400">Tensione Attuale</p>
+              <p className={`text-2xl font-bold ${socColor}`}>{currentVBat ? currentVBat.toFixed(2) : '--'} <span className="text-sm font-normal text-slate-400">V</span></p>
+            </div>
+            <div className="mt-2 pt-2 border-t border-slate-700/50">
+              <p className="text-xs text-slate-400 flex items-center justify-between">
+                <span>Max: {summary.v_bat_max ? summary.v_bat_max.toFixed(2) : '--'}V</span> 
+                <span className="text-sky-400">Min: {summary.v_bat_min ? summary.v_bat_min.toFixed(2) : '--'}V</span>
+              </p>
+            </div>
           </div>
         </div>
-      </div>
 
       <div className={isFullscreen ? "fixed inset-0 z-[60] bg-slate-900 p-4 flex flex-col" : "bg-slate-800 p-4 rounded-2xl border border-slate-700 mt-2 flex flex-col"}>
         <div className="flex justify-between items-center mb-2">
@@ -221,6 +243,12 @@ export default function TodayView({ onLogout }: { onLogout: () => void }) {
     </div>
   );
 }
+
+
+
+
+
+
 
 
 

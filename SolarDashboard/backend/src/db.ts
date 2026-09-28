@@ -43,14 +43,14 @@ export async function updateDailySummary(env: Env) {
         (date, wh_produced, wh_battery_charge, wh_battery_discharge, peak_power_w, v_bat_min, v_bat_max, avg_cloud, t_box_max, anomaly_count)
         SELECT 
             date(datetime_local),
-            SUM(w_pan) / 6.0 AS wh_produced,
-            SUM(CASE WHEN i_bat < 0 THEN ABS(w_bat) ELSE 0 END) / 6.0 AS wh_battery_charge,
-            SUM(CASE WHEN i_bat > 0 THEN ABS(w_bat) ELSE 0 END) / 6.0 AS wh_battery_discharge,
-            MAX(w_pan) AS peak_power_w,
-            MIN(v_bat) AS v_bat_min,
-            MAX(v_bat) AS v_bat_max,
+            SUM(CASE WHEN is_valid = 1 THEN w_pan ELSE 0 END) / 6.0 AS wh_produced,
+            SUM(CASE WHEN is_valid = 1 AND i_bat < 0 THEN ABS(w_bat) ELSE 0 END) / 6.0 AS wh_battery_charge,
+            SUM(CASE WHEN is_valid = 1 AND i_bat > 0 THEN ABS(w_bat) ELSE 0 END) / 6.0 AS wh_battery_discharge,
+            MAX(CASE WHEN is_valid = 1 THEN w_pan END) AS peak_power_w,
+            MIN(CASE WHEN is_valid = 1 THEN v_bat END) AS v_bat_min,
+            MAX(CASE WHEN is_valid = 1 THEN v_bat END) AS v_bat_max,
             AVG(NULLIF(cloud, -1)) AS avg_cloud,
-            MAX(t_box) AS t_box_max,
+            MAX(CASE WHEN is_valid = 1 THEN t_box END) AS t_box_max,
             SUM(CASE WHEN is_valid = 0 THEN 1 ELSE 0 END) AS anomaly_count
         FROM solar_records
         GROUP BY date(datetime_local)
@@ -65,6 +65,8 @@ export async function updateDailySummary(env: Env) {
             t_box_max = excluded.t_box_max,
             anomaly_count = excluded.anomaly_count`).run();
 }
+
+
 
 
 

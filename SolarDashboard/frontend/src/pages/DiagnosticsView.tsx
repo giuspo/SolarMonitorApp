@@ -132,43 +132,47 @@ export default function DiagnosticsView() {
           </div>
           <div className="bg-slate-900/50 p-2 rounded-lg text-xs text-slate-400 border border-slate-700/50">
             Indica quante volte il sensore INA3221 ha inviato dati matematicamente impossibili (es. cavo scollegato o sbalzi) che il sistema ha bloccato e scartato.
+          </div>
+          {corruptedLog.length > 0 && (
+            <div className="mt-3 p-3 bg-slate-900/80 rounded-lg text-xs font-mono text-red-300 overflow-x-auto border border-red-900/30">
+              <p className="text-slate-400 mb-2 font-sans">Log dati scartati:</p>
+              {corruptedLog.map((log, i) => (
+                <div key={i} className="mb-2 pb-2 border-b border-red-900/30 last:border-0 last:mb-0 last:pb-0">
+                  <span className="text-red-400 font-bold">{new Date(log.datetime_local).toLocaleTimeString('it-IT')}</span>
+                  <br/>
+                  V_PAN: {log.v_pan}V | I_PAN: {log.i_pan}A | W_PAN: {log.w_pan}W
+                  <br/>
+                  V_BAT: {log.v_bat}V | I_BAT: {log.i_bat}A | W_BAT: {log.w_bat}W
+                </div>
+              ))}
             </div>
-            {corruptedLog.length > 0 && (
-              <div className="mt-3 p-3 bg-slate-900/80 rounded-lg text-xs font-mono text-red-300 overflow-x-auto border border-red-900/30">
-                <p className="text-slate-400 mb-2 font-sans">Log dati scartati:</p>
-                {corruptedLog.map((log, i) => (
-                  <div key={i} className="mb-2 pb-2 border-b border-red-900/30 last:border-0 last:mb-0 last:pb-0">
-                    <span className="text-red-400 font-bold">{new Date(log.datetime_local).toLocaleTimeString('it-IT')}</span>
-                    <br/>
-                    V_PAN: {log.v_pan}V | I_PAN: {log.i_pan}A | W_PAN: {log.w_pan}W
-                    <br/>
-                    V_BAT: {log.v_bat}V | I_BAT: {log.i_bat}A | W_BAT: {log.w_bat}W
-                  </div>
-                ))}
-              </div>
-            )}
+          )}
         </div>
-                <div className="bg-slate-800 p-4 rounded-2xl border border-slate-700">
-            <h3 className="text-slate-400 text-sm mb-4">Informazioni Sistema</h3>
-            <div className="space-y-3">
-              <div className="flex justify-between items-center">
-                <span className="text-slate-400">Versione App (Frontend)</span>
-                <span className="text-slate-200 font-mono text-sm">{__APP_VERSION__}</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-slate-400">Versione API (Backend)</span>
-                <span className="text-slate-200 font-mono text-sm">{apiVersion}</span>
-              </div>
+
+        <div className="bg-slate-800 p-4 rounded-2xl border border-slate-700">
+          <h3 className="text-slate-400 text-sm mb-4">Informazioni Sistema</h3>
+          <div className="space-y-3">
+            <div className="flex justify-between items-center">
+              <span className="text-slate-400">Versione App (Frontend)</span>
+              <span className="text-slate-200 font-mono text-sm">{__APP_VERSION__}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-slate-400">Versione API (Backend)</span>
+              <span className="text-slate-200 font-mono text-sm">{apiVersion}</span>
             </div>
           </div>
         </div>
+
+        <div className="bg-slate-800 p-4 rounded-2xl border border-slate-700">
+          <h3 className="text-slate-400 text-sm mb-4">Aggiornamento Dati</h3>
+          <div className="text-sm text-slate-300 space-y-2">
+            <p>Il Sensore (Box) invia i dati al Cloud (Adafruit) in tempo reale.</p>
+            <p>Il nostro Server Cloudflare scarica e salva questi dati <strong>automaticamente ogni 15 minuti</strong> (via Cron Job).</p>
+            <p className="text-emerald-400 mt-2">💡 <strong>Consiglio:</strong> Puoi forzare il download immediato dei dati dal sensore in qualsiasi momento premendo il tasto "Aggiorna" in alto a destra nella schermata "Oggi".</p>
+          </div>
+        </div>
+
+      </div>
     </div>
   );
 }
-
-
-
-
-
-
-
