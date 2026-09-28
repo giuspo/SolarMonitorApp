@@ -194,17 +194,17 @@ export default function TodayView({ onLogout }: { onLogout: () => void }) {
         
         {/* HUD Container for live data instead of floating tooltip */}
         
-        <div className={`touch-none ${isFullscreen ? 'flex-1 min-h-0' : 'h-[300px]'}`}>
+        <div className={`touch-none ${isFullscreen ? 'flex-1 min-h-0' : 'h-[350px] md:h-[500px]'}`}>
         <ResponsiveContainer width="100%" height="100%">
             <AreaChart key={brushKey} data={chartData} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
               <XAxis dataKey="time" stroke="#475569" fontSize={12} tickLine={false} axisLine={false} />
               <YAxis stroke="#475569" fontSize={12} tickLine={false} axisLine={false} />
               <Tooltip content={<SyncTooltip setHoverData={setHoverData} />} cursor={{stroke: '#475569', strokeWidth: 1, strokeDasharray: '3 3'}} />
               <Legend verticalAlign="top" iconType="circle" wrapperStyle={{ fontSize: '12px', color: '#94a3b8', cursor: 'pointer' }} onClick={handleLegendClick} />
-              <Area hide={!visible.w_pan} type="monotone" dataKey="w_pan" name="Solare [W]" stroke={visible.w_pan ? "#facc15" : "#475569"} fill="#facc15" fillOpacity={0.2} strokeWidth={2} />
+              <Area hide={!visible.w_pan} type="monotone" dataKey="w_pan" name="Solare [W]" stroke={visible.w_pan ? "#facc15" : "#475569"} fill="#facc15" fillOpacity={0.2} strokeWidth={3} />
               <ReferenceLine y={0} stroke="#475569" strokeDasharray="3 3" />
-              <Area hide={!visible.w_bat_charge} type="monotone" dataKey="w_bat_charge" name="Batt. in Ricarica [W]" stroke={visible.w_bat_charge ? "#10b981" : "#475569"} fill="#10b981" fillOpacity={0.2} strokeWidth={2} />
-              <Area hide={!visible.w_bat_discharge} type="monotone" dataKey="w_bat_discharge" name="Batt. in Scarica [W]" stroke={visible.w_bat_discharge ? "#ef4444" : "#475569"} fill="#ef4444" fillOpacity={0.2} strokeWidth={2} />
+              <Area hide={!visible.w_bat_charge} type="monotone" dataKey="w_bat_charge" name="Batt. in Ricarica [W]" stroke={visible.w_bat_charge ? "#10b981" : "#475569"} fill="#10b981" fillOpacity={0.2} strokeWidth={3} />
+              <Area hide={!visible.w_bat_discharge} type="monotone" dataKey="w_bat_discharge" name="Batt. in Scarica [W]" stroke={visible.w_bat_discharge ? "#ef4444" : "#475569"} fill="#ef4444" fillOpacity={0.2} strokeWidth={3} />
               <Brush dataKey="time" height={30} stroke="#64748b" fill="#0f172a" travellerWidth={12} />
             </AreaChart>
           </ResponsiveContainer>
@@ -222,12 +222,12 @@ export default function TodayView({ onLogout }: { onLogout: () => void }) {
               </div>
               <div className="flex flex-col">
                 <span className="text-slate-400 text-sm uppercase tracking-wider">☀️ Pannello</span>
-                <span className="font-bold text-yellow-400 text-lg">{displayData.w_pan?.toFixed(1) ?? '--'} W <span className="text-sm text-slate-400 font-normal">({displayData.v_pan?.toFixed(1)}V • {displayData.i_pan?.toFixed(1)}A)</span></span>
+                <span className="font-bold text-yellow-400 text-lg">{displayData.w_pan?.toFixed(1) ?? '--'} W <span className="text-sm text-slate-400 font-normal">({displayData.v_pan?.toFixed(1)}V • {displayData.i_pan?.toFixed(2)}A)</span></span>
               </div>
               <div className="flex flex-col">
                 <span className="text-slate-400 text-sm uppercase tracking-wider">🔋 Batteria</span>
                 <span className={`font-bold ${displayData.i_bat < 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                  {Math.abs(displayData.w_bat || 0).toFixed(1)} W <span className="text-sm text-slate-400 font-normal">({displayData.v_bat?.toFixed(1)}V • {displayData.i_bat?.toFixed(1)}A)</span>
+                  {Math.abs(displayData.w_bat || 0).toFixed(1)} W <span className="text-sm text-slate-400 font-normal">({displayData.v_bat?.toFixed(1)}V • {displayData.i_bat?.toFixed(2)}A)</span>
                 </span>
               </div>
               <div className="flex flex-col">
@@ -243,6 +243,8 @@ export default function TodayView({ onLogout }: { onLogout: () => void }) {
     </div>
   );
 }
+
+
 
 
 
