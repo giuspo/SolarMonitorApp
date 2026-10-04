@@ -1,7 +1,12 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { LogOut, Zap, Battery, Cloud, RefreshCw, Sun, BatteryCharging, Maximize2, Minimize2 , BatteryFull, BatteryMedium, BatteryLow, BatteryWarning } from 'lucide-react';
-import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine, Legend, Brush } from 'recharts';
+import { AreaChart, Area, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine, Legend, Brush } from 'recharts';
 import { api } from '../services/api';
+import { getPosition } from 'suncalc';
+
+// MODIFICA QUI LE TUE COORDINATE GEOGRAFICHE
+const LATITUDE = 41.9028; // Default: Roma
+const LONGITUDE = 12.4964;
 
 
 function SyncTooltip({ active, payload, setHoverData }: any) {
@@ -22,14 +27,22 @@ export default function TodayView({ onLogout }: { onLogout: () => void }) {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [brushKey, setBrushKey] = useState(0);
   const [hoverData, setHoverData] = useState<any>(null);
-  const [visible, setVisible] = useState({ w_pan: true, w_bat_charge: true, w_bat_discharge: true });
+  const [brushRange, setBrushRange] = useState<any>(null);
+  const [visible, setVisible] = useState({ w_pan: true, w_bat_charge: true, w_bat_discharge: true, sun_elevation: true });
 
   const loadData = async () => {
     try {
-      const res = await api.getToday();
+      const [res, settingsRes] = await Promise.all([
+        api.getToday(),
+        api.getSettings().catch(() => ({ settings: null }))
+      ]);
       
+      const lat = settingsRes?.settings?.latitude ?? LATITUDE;
+      const lon = settingsRes?.settings?.longitude ?? LONGITUDE;
+
       let peakTime = '--:--';
-      let maxW = -1;
+      let maxW = 0.1; // Evita divisioni per zero
+      let minW = 0;
 
       const formattedChart = (res.chartData || []).filter((d: any) => d.is_valid !== 0 && d.is_valid !== false).map((d: any) => {
         const time = new Date(d.datetime_local).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
@@ -41,9 +54,42 @@ export default function TodayView({ onLogout }: { onLogout: () => void }) {
 
         const w_bat_charge = d.i_bat < 0 ? Math.abs(d.w_bat) : 0;
         const w_bat_discharge = d.i_bat > 0 ? -Math.abs(d.w_bat) : 0;
-        return { ...d, time, w_bat_charge, w_bat_discharge };
+        
+        if (w_bat_discharge < minW) {
+            minW = w_bat_discharge;
+        }
+        
+        // Calcolo altezza del sole in base all'orario del record
+        const dateObj = new Date(d.datetime_local);
+        const sunPos = getPosition(dateObj, lat, lon);
+        let sun_elevation = sunPos.altitude;
+        if (sun_elevation < 0) sun_elevation = 0; // Se è sotto l'orizzonte, mostriamo 0
+
+        return { ...d, time, w_bat_charge, w_bat_discharge, sun_elevation };
       });
-      setData({ summary: res.summary || {}, chart: formattedChart, peakTime });
+      
+      const roughStepL = (maxW - minW) / 5;
+      const mag = Math.pow(10, Math.floor(Math.log10(roughStepL || 1)));
+      let stepL = Math.ceil(roughStepL / mag) * mag;
+      
+      if (stepL === 3 * mag || stepL === 4 * mag) stepL = 5 * mag;
+      else if (stepL === 6 * mag || stepL === 7 * mag || stepL === 8 * mag || stepL === 9 * mag) stepL = 10 * mag;
+
+      let L_max = Math.ceil(maxW / stepL) * stepL;
+      let L_min = Math.floor(minW / stepL) * stepL;
+      
+      const posTicks = Math.round(L_max / stepL) || 1;
+      const negTicks = Math.round(Math.abs(L_min) / stepL);
+      
+      const stepR = 90 / posTicks;
+
+      const leftTicks = [];
+      for(let i = -negTicks; i <= posTicks; i++) leftTicks.push(Number((i * stepL).toFixed(2)));
+      
+      const rightTicks = [];
+      for(let i = -negTicks; i <= posTicks; i++) rightTicks.push(Number((i * stepR).toFixed(2)));
+
+      setData({ summary: res.summary || {}, chart: formattedChart, peakTime, leftTicks, rightTicks, L_min, L_max, R_min: rightTicks[0], R_max: rightTicks[rightTicks.length-1] });
     } catch (err) {
       console.error(err);
     } finally {
@@ -71,9 +117,42 @@ export default function TodayView({ onLogout }: { onLogout: () => void }) {
 
   if (loading) return <div className="p-4 text-center mt-10">Caricamento dati dal sensore...</div>;
 
-  const summary = data?.summary || {};
+  let summary = data?.summary || {};
   const chartData = data?.chart || [];
-  const peakTime = data?.peakTime || '--:--';
+  let peakTime = data?.peakTime || '--:--';
+  let isSelection = false;
+
+  if (brushRange && brushRange.startIndex !== undefined && brushRange.endIndex !== undefined && chartData.length > 0) {
+    if (brushRange.startIndex > 0 || brushRange.endIndex < chartData.length - 1) {
+      isSelection = true;
+      const slice = chartData.slice(brushRange.startIndex, brushRange.endIndex + 1);
+      
+      let wh_produced = 0;
+      let wh_battery_charge = 0;
+      let wh_battery_discharge = 0;
+      let peak_power_w = 0;
+      
+      slice.forEach((d: any) => {
+        // Ogni record vale 10 minuti (1/6 di ora)
+        if (d.w_pan) wh_produced += d.w_pan / 6.0;
+        if (d.w_bat_charge) wh_battery_charge += d.w_bat_charge / 6.0;
+        if (d.w_bat_discharge) wh_battery_discharge += Math.abs(d.w_bat_discharge) / 6.0;
+        if ((d.w_pan || 0) > peak_power_w) {
+          peak_power_w = d.w_pan;
+          peakTime = d.time;
+        }
+      });
+      
+      summary = {
+        ...summary,
+        wh_produced,
+        wh_battery_charge,
+        wh_battery_discharge,
+        peak_power_w
+      };
+    }
+  }
+
   const lastRecord = chartData && chartData.length > 0 ? chartData[chartData.length - 1] : null;
   const currentVBat = lastRecord ? lastRecord.v_bat : null;
   let soc = '--';
@@ -119,13 +198,17 @@ export default function TodayView({ onLogout }: { onLogout: () => void }) {
         <div className="bg-slate-800 p-4 rounded-2xl border border-slate-700 flex flex-col justify-between">
           <div>
             <Sun className="w-6 h-6 text-yellow-400 mb-2" />
-            <p className="text-sm text-slate-400">Pannello (Totale Oggi)</p>
+            <p className="text-sm text-slate-400">Pannello ({isSelection ? 'Selezione' : 'Totale Oggi'})</p>
             <p className="text-2xl font-bold text-yellow-400 text-lg">{Math.round(summary.wh_produced || 0)} <span className="text-sm font-normal text-slate-300">Wh</span></p>
           </div>
-          <div className="mt-2 pt-2 border-t border-slate-700/50">
+          <div className="mt-2 pt-2 flex flex-col gap-1 border-t border-slate-700/50">
             <p className="text-xs text-slate-400 flex items-center justify-between">
               <span>Meteo Medio:</span> 
               <span className="font-bold text-sky-400">{summary.avg_cloud ? Math.round(summary.avg_cloud * 100) : '--'}% <Cloud className="w-3 h-3 inline ml-0.5" /></span>
+            </p>
+            <p className="text-xs text-slate-400 flex items-center justify-between">
+              <span>Sole (Altezza):</span> 
+              <span className="font-bold text-yellow-400">{lastRecord && lastRecord.sun_elevation != null ? Math.round(lastRecord.sun_elevation) : '--'}° <Sun className="w-3 h-3 inline ml-0.5" /></span>
             </p>
           </div>
         </div>
@@ -134,7 +217,7 @@ export default function TodayView({ onLogout }: { onLogout: () => void }) {
         <div className="bg-slate-800 p-4 rounded-2xl border border-slate-700 flex flex-col justify-between">
           <div>
             <Zap className="w-6 h-6 text-orange-400 mb-2" />
-            <p className="text-sm text-slate-400">Picco Solare</p>
+            <p className="text-sm text-slate-400">Picco Solare {isSelection ? '(Selezione)' : ''}</p>
             <p className="text-2xl font-bold text-orange-400">{Math.round(summary.peak_power_w || 0)} <span className="text-sm font-normal text-slate-300">W</span></p>
           </div>
           <div className="mt-2 pt-2 border-t border-slate-700/50">
@@ -149,8 +232,8 @@ export default function TodayView({ onLogout }: { onLogout: () => void }) {
         <div className="bg-slate-800 p-4 rounded-2xl border border-slate-700 flex flex-col justify-between">
           <div>
             <BatteryCharging className="w-6 h-6 text-emerald-400 mb-2" />
-            <p className="text-sm text-slate-400">Batteria (Erogata)</p>
-            <p className="text-2xl font-bold text-red-400">{Math.round(summary.wh_battery_discharge || 0)} <span className="text-sm font-normal text-slate-300">Wh</span></p>
+            <p className="text-sm text-slate-400">Batteria ({isSelection ? 'Selezione' : 'Erogata'})</p>
+            <p className="text-2xl font-bold text-red-400">{Math.round(summary.wh_battery_discharge || 0)} <span className="text-sm font-normal text-slate-300">Wh <span className="text-xs">(Erogata)</span></span></p>
           </div>
           <div className="mt-2 pt-2 border-t border-slate-700/50">
             <p className="text-xs text-slate-400 flex items-center justify-between">
@@ -183,7 +266,7 @@ export default function TodayView({ onLogout }: { onLogout: () => void }) {
         <div className="flex justify-between items-center mb-2">
           <h2 className="text-sm text-slate-400">Curva Solare (W)</h2>
           <div className="flex gap-2">
-            <button onClick={() => setBrushKey(k => k + 1)} className="text-xs text-slate-400 hover:text-white bg-slate-800/50 px-2 py-1 rounded-lg border border-slate-700">
+            <button onClick={() => { setBrushKey(k => k + 1); setBrushRange(null); }} className="text-xs text-slate-400 hover:text-white bg-slate-800/50 px-2 py-1 rounded-lg border border-slate-700">
               Reset Zoom
             </button>
             <button onClick={() => setIsFullscreen(!isFullscreen)} className="text-slate-400 hover:text-white bg-slate-800/50 p-1.5 rounded-lg border border-slate-700">
@@ -198,14 +281,16 @@ export default function TodayView({ onLogout }: { onLogout: () => void }) {
         <ResponsiveContainer width="100%" height="100%">
             <AreaChart key={brushKey} data={chartData} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
               <XAxis dataKey="time" stroke="#475569" fontSize={12} tickLine={false} axisLine={false} />
-              <YAxis stroke="#475569" fontSize={12} tickLine={false} axisLine={false} />
+              <YAxis yAxisId="left" stroke="#475569" fontSize={12} tickLine={false} axisLine={false} ticks={data.leftTicks} domain={[data.L_min || 0, data.L_max || 10]} />
+              <YAxis yAxisId="right" orientation="right" stroke="#fb923c" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(val) => `${val}°`} ticks={data.rightTicks} domain={[data.R_min || 0, data.R_max || 90]} hide={!visible.sun_elevation} />
               <Tooltip content={<SyncTooltip setHoverData={setHoverData} />} cursor={{stroke: '#475569', strokeWidth: 1, strokeDasharray: '3 3'}} />
               <Legend verticalAlign="top" iconType="circle" wrapperStyle={{ fontSize: '12px', color: '#94a3b8', cursor: 'pointer' }} onClick={handleLegendClick} />
-              <Area hide={!visible.w_pan} type="monotone" dataKey="w_pan" name="Solare [W]" stroke={visible.w_pan ? "#facc15" : "#475569"} fill="#facc15" fillOpacity={0.2} strokeWidth={3} />
-              <ReferenceLine y={0} stroke="#475569" strokeDasharray="3 3" />
-              <Area hide={!visible.w_bat_charge} type="monotone" dataKey="w_bat_charge" name="Batt. in Ricarica [W]" stroke={visible.w_bat_charge ? "#10b981" : "#475569"} fill="#10b981" fillOpacity={0.2} strokeWidth={3} />
-              <Area hide={!visible.w_bat_discharge} type="monotone" dataKey="w_bat_discharge" name="Batt. in Scarica [W]" stroke={visible.w_bat_discharge ? "#ef4444" : "#475569"} fill="#ef4444" fillOpacity={0.2} strokeWidth={3} />
-              <Brush dataKey="time" height={30} stroke="#64748b" fill="#0f172a" travellerWidth={12} />
+              <Area yAxisId="left" hide={!visible.w_pan} type="monotone" dataKey="w_pan" name="Solare [W]" stroke={visible.w_pan ? "#facc15" : "#475569"} fill="#facc15" fillOpacity={0.2} strokeWidth={3} />
+              <ReferenceLine yAxisId="left" y={0} stroke="#475569" strokeDasharray="3 3" />
+              <Area yAxisId="left" hide={!visible.w_bat_charge} type="monotone" dataKey="w_bat_charge" name="Batt. in Ricarica [W]" stroke={visible.w_bat_charge ? "#10b981" : "#475569"} fill="#10b981" fillOpacity={0.2} strokeWidth={3} />
+              <Area yAxisId="left" hide={!visible.w_bat_discharge} type="monotone" dataKey="w_bat_discharge" name="Batt. in Scarica [W]" stroke={visible.w_bat_discharge ? "#ef4444" : "#475569"} fill="#ef4444" fillOpacity={0.2} strokeWidth={3} />
+              <Line yAxisId="right" hide={!visible.sun_elevation} type="monotone" dataKey="sun_elevation" name="Elevazione Sole [°]" stroke={visible.sun_elevation ? "#fb923c" : "#475569"} strokeWidth={2} dot={false} strokeDasharray="5 5" />
+              <Brush dataKey="time" height={30} stroke="#64748b" fill="#0f172a" travellerWidth={12} onChange={(e) => setBrushRange(e)} />
             </AreaChart>
           </ResponsiveContainer>
         </div>
@@ -222,7 +307,7 @@ export default function TodayView({ onLogout }: { onLogout: () => void }) {
               </div>
               <div className="flex flex-col">
                 <span className="text-slate-400 text-sm uppercase tracking-wider">☀️ Pannello</span>
-                <span className="font-bold text-yellow-400 text-lg">{displayData.w_pan?.toFixed(1) ?? '--'} W <span className="text-sm text-slate-400 font-normal">({displayData.v_pan?.toFixed(1)}V • {displayData.i_pan?.toFixed(2)}A)</span></span>
+                <span className="font-bold text-yellow-400 text-lg">{displayData.w_pan?.toFixed(1) ?? '--'} W <span className="text-sm text-slate-400 font-normal">({displayData.v_pan?.toFixed(1)}V • {displayData.i_pan?.toFixed(2)}A • ☀️ {displayData.sun_elevation != null ? Math.round(displayData.sun_elevation) : '--'}°)</span></span>
               </div>
               <div className="flex flex-col">
                 <span className="text-slate-400 text-sm uppercase tracking-wider">🔋 Batteria</span>

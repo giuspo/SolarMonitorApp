@@ -1,4 +1,4 @@
-﻿-- Tabella record raw (1 record ogni 10 min)
+-- Tabella record raw (1 record ogni 10 min)
 CREATE TABLE IF NOT EXISTS solar_records (
     tstamp INTEGER PRIMARY KEY,         -- Unix timestamp
     datetime_local TEXT NOT NULL,       -- ISO string Europe/Rome
@@ -32,7 +32,9 @@ CREATE TABLE IF NOT EXISTS daily_summaries (
 -- Tabella utenti autorizzati all'accesso (Whitelist dinamica)
 CREATE TABLE IF NOT EXISTS authorized_users (
     email TEXT PRIMARY KEY,             -- Email dell'utente abilitato
-    added_at TEXT DEFAULT CURRENT_TIMESTAMP
+    added_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    latitude REAL,
+    longitude REAL
 );
 
 -- Inserisci qui la tua email Google per essere autorizzato al login

@@ -1,4 +1,4 @@
-﻿import { Hono } from 'hono';
+import { Hono } from 'hono';
 import { APP_VERSION } from './version';
 import { cors } from 'hono/cors';
 import { fetchAdafruitData } from './adafruit';
@@ -14,7 +14,8 @@ export interface Env {
   ADAFRUIT_FEED: string;
 }
 
-const app = new Hono<{ Bindings: Env }>();
+type Variables = { userEmail: string };
+const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
 // Abilita CORS per il frontend
 app.use('/api/*', cors({
@@ -54,6 +55,9 @@ app.use('/api/*', async (c, next) => {
   try {
     const isValid = await cloudflareJwt.verify(token, c.env.AUTH_SECRET);
     if (!isValid) throw new Error("Invalid");
+    const decoded = cloudflareJwt.decode(token);
+    if (!decoded || !decoded.payload) throw new Error("Invalid payload");
+    c.set('userEmail', (decoded.payload as any).email);
   } catch (e) {
     return c.json({ error: 'Token non valido o scaduto' }, 401);
   }
@@ -124,6 +128,21 @@ app.get('/api/history/:date', async (c) => {
 app.get('/api/history', async (c) => {
   const { results } = await c.env.DB.prepare('SELECT * FROM daily_summaries ORDER BY date DESC LIMIT 1000').all();
   return c.json({ success: true, history: results });
+});
+
+app.get('/api/settings', async (c) => {
+  const email = c.get('userEmail');
+  const user = await c.env.DB.prepare('SELECT latitude, longitude FROM authorized_users WHERE email = ?').bind(email).first();
+  return c.json({ success: true, settings: user });
+});
+
+app.post('/api/settings', async (c) => {
+  const email = c.get('userEmail');
+  const body = await c.req.json();
+  await c.env.DB.prepare('UPDATE authorized_users SET latitude = ?, longitude = ? WHERE email = ?')
+    .bind(body.latitude, body.longitude, email)
+    .run();
+  return c.json({ success: true });
 });
 
 export default {

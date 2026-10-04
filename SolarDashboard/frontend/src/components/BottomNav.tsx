@@ -1,5 +1,5 @@
-﻿import { NavLink } from 'react-router-dom';
-import { Sun, BarChart2, Activity, Calculator } from 'lucide-react';
+import { NavLink } from 'react-router-dom';
+import { Sun, BarChart2, Activity, Calculator, Settings } from 'lucide-react';
 
 export default function BottomNav() {
   const linkClass = ({ isActive }: { isActive: boolean }) =>
@@ -24,6 +24,10 @@ export default function BottomNav() {
       <NavLink to="/diagnostics" className={linkClass}>
         <Activity className="w-6 h-6" />
         <span className="text-[10px] font-medium">Diagnostica</span>
+      </NavLink>
+      <NavLink to="/settings" className={linkClass}>
+        <Settings className="w-6 h-6" />
+        <span className="text-[10px] font-medium">Impostazioni</span>
       </NavLink>
     </nav>
   );

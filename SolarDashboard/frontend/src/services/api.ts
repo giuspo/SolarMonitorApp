@@ -1,4 +1,4 @@
-﻿const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8787/api';
+const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8787/api';
 
 async function fetchWithAuth(endpoint: string, options: RequestInit = {}) {
   const token = localStorage.getItem('apiToken');
@@ -28,7 +28,12 @@ export const api = {
   getHistoryMonth: (month: string) => fetchWithAuth('/history-month/' + month),
   getHistoryRange: (start: string, end: string) => fetchWithAuth(`/history-range?start=${start}&end=${end}`),
   syncData: () => fetchWithAuth('/sync', { method: 'POST' }),
-  getStatus: () => fetchWithAuth('/status')
+  getStatus: () => fetchWithAuth('/status'),
+  getSettings: () => fetchWithAuth('/settings'),
+  updateSettings: (data: { latitude: number, longitude: number }) => fetchWithAuth('/settings', {
+    method: 'POST',
+    body: JSON.stringify(data)
+  })
 };
 
 
