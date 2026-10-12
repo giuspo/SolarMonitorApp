@@ -1,5 +1,11 @@
-# Adafruit IO Configuration
-# Modifica questi valori per cambiare l'endpoint API
+# ==============================================================================
+# Solar Monitor Box - Configurazione Generale (Non-Secret)
+# ==============================================================================
 
 substitutions:
+  # Endpoint Adafruit IO
   adafruit_full_url: "https://io.adafruit.com/api/v2/giuspo/feeds/solar-data-logger/data"
+
+  # Soglie massime di validità per sensori (evita falsi scarti durante carica LiFePO4)
+  battery_voltage_max: "16.0"
+  panel_voltage_max: "60.0"

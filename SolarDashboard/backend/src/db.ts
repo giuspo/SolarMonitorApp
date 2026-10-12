@@ -1,4 +1,4 @@
-﻿import { Env } from './index';
+import { Env } from './index';
 import { AdafruitPayload } from './adafruit';
 
 export async function saveRecordsToD1(env: Env, records: AdafruitPayload[]) {
@@ -50,7 +50,7 @@ export async function updateDailySummary(env: Env) {
             MIN(CASE WHEN is_valid = 1 THEN v_bat END) AS v_bat_min,
             MAX(CASE WHEN is_valid = 1 THEN v_bat END) AS v_bat_max,
             AVG(NULLIF(cloud, -1)) AS avg_cloud,
-            MAX(CASE WHEN is_valid = 1 THEN t_box END) AS t_box_max,
+            MAX(CASE WHEN is_valid = 1 AND t_box != -1 THEN t_box END) AS t_box_max,
             SUM(CASE WHEN is_valid = 0 THEN 1 ELSE 0 END) AS anomaly_count
         FROM solar_records
         GROUP BY date(datetime_local)

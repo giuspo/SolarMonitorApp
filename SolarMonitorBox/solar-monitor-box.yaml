@@ -52,6 +52,10 @@ globals:
     type: float
     restore_value: false
     initial_value: '-1.0'
+  - id: last_valid_temp
+    type: float
+    restore_value: false
+    initial_value: '-999.0'
   - id: device_lat
     type: float
     restore_value: false
@@ -389,7 +393,7 @@ script:
             if(id(battery_voltage).has_state())
             {
               v_b = id(battery_voltage).state;
-              if(std::isnan(v_b) || v_b < 0.0f || v_b > 14.0f)
+              if(std::isnan(v_b) || v_b < 0.0f || v_b > ${battery_voltage_max})
               {
                 ESP_LOGW("ADAFRUIT", "Voltage Batteria out of range: %.2fV", v_b);
                 v_b = -1.0f;
@@ -425,15 +429,20 @@ script:
             } else { valid_f = false; valid_b = false; }
 
             // --- Raccolta Temperatura Quadretto ---
-            float temp_c = -1.0f;
+            float temp_c = id(last_valid_temp);
             if(id(temp_quadretto).has_state())
             {
-              temp_c = id(temp_quadretto).state;
-              if(std::isnan(temp_c) || temp_c < -55.0f || temp_c > 85.0f)
+              float current_temp = id(temp_quadretto).state;
+              if(!std::isnan(current_temp) && current_temp >= -40.0f && current_temp <= 85.0f)
               {
-                ESP_LOGW("ADAFRUIT", "Temperatura fuori range: %.2f°C", temp_c);
-                temp_c = -1.0f;
+                temp_c = current_temp;
+                id(last_valid_temp) = current_temp;
+              } else {
+                ESP_LOGW("ADAFRUIT", "Temperatura anomala o fuori range: %.2f°C", current_temp);
               }
+            }
+            if (temp_c < -50.0f) {
+              temp_c = -1.0f;
             }
 
             // --- Logica di Coerenza Fisica (P = V * I) ---

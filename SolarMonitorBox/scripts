@@ -1,12 +1,25 @@
-python -m esphome compile wifi-test.yaml
+# ==============================================================================
+# Comandi ESPHome per SolarMonitorBox
+# ==============================================================================
 
-python -m esphome upload wifi-test.yaml
+# --- SU UBUNTU / LINUX ---
+# 1. Creazione ambiente virtuale (solo la prima volta):
+#    python3 -m venv .venv
+#    .venv/bin/pip install esphome
+#
+# 2. Esecuzione diretta con percorso Python:
+.venv/bin/python -m esphome compile solar-monitor-box.yaml
+.venv/bin/python -m esphome upload solar-monitor-box.yaml
+.venv/bin/python -m esphome logs solar-monitor-box.yaml
+.venv/bin/python -m esphome run solar-monitor-box.yaml
 
-python -m esphome logs wifi-test.yaml
+# 3. Oppure attivando l'ambiente:
+#    source .venv/bin/activate
+#    esphome compile solar-monitor-box.yaml
+#    esphome run solar-monitor-box.yaml
 
-In ambiente virtuale
-.\.venv\Scripts\python.exe -m esphome compile solar-monitor-box.yaml
 
-.\.venv\Scripts\python.exe -m esphome upload solar-monitor-box.yaml
-
-.\.venv\Scripts\python.exe -m esphome logs solar-monitor-box.yaml
+# --- SU WINDOWS (Powershell / CMD) ---
+# .\.venv\Scripts\python.exe -m esphome compile solar-monitor-box.yaml
+# .\.venv\Scripts\python.exe -m esphome upload solar-monitor-box.yaml
+# .\.venv\Scripts\python.exe -m esphome logs solar-monitor-box.yaml
