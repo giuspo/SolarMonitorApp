@@ -1,5 +1,52 @@
-# Adafruit IO Configuration
-# Modifica questi valori per cambiare l'endpoint API
+# ==============================================================================
+# Solar Monitor Box - Configurazione Generale (Non-Secret)
+# ==============================================================================
+# Tutti i parametri hardware, pin, intervalli ed endpoint non sensibili.
+# I dati riservati (credenziali, password, chiavi API) risiedono in secrets.yaml.
 
 substitutions:
+  # ----------------------------------------------------------------------------
+  # 1. Carico PWM (MOSFET & Striscia LED)
+  # ----------------------------------------------------------------------------
+  load_pwm_pin: "GPIO17"
+  load_pwm_frequency: "1000Hz"
+
+  # ----------------------------------------------------------------------------
+  # 2. Pin Hardware LED di Stato
+  # ----------------------------------------------------------------------------
+  wifi_status_led_pin: "GPIO27"
+  adafruit_status_led_pin: "GPIO4"
+
+  # ----------------------------------------------------------------------------
+  # 3. Pin Sensore Temperatura (Dallas DS18B20 1-Wire)
+  # ----------------------------------------------------------------------------
+  temp_sensor_pin: "GPIO25"
+
+  # ----------------------------------------------------------------------------
+  # 4. Bus I2C Sensori INA226 (Pannello e Batteria)
+  # ----------------------------------------------------------------------------
+  i2c_solar_sda_pin: "GPIO21"
+  i2c_solar_scl_pin: "GPIO22"
+  i2c_battery_sda_pin: "GPIO18"
+  i2c_battery_scl_pin: "GPIO19"
+  i2c_bus_frequency: "400kHz"
+
+  # ----------------------------------------------------------------------------
+  # 5. Intervalli di Campionamento e Invio Telemetria
+  # ----------------------------------------------------------------------------
+  sensor_update_interval: "30s"
+  wifi_rssi_interval: "5s"
+  adafruit_send_interval: "10min"
+  location_update_interval: "30min"
+
+  # ----------------------------------------------------------------------------
+  # 6. Rete Wi-Fi (AP di Fallback) & Sistema
+  # ----------------------------------------------------------------------------
+  fallback_ap_ssid: "WiFi-Test Fallback"
+  web_server_port: "80"
+  timezone: "Europe/Rome"
+
+  # ----------------------------------------------------------------------------
+  # 7. Endpoint Adafruit IO
+  # ----------------------------------------------------------------------------
   adafruit_full_url: "https://io.adafruit.com/api/v2/giuspo/feeds/solar-data-logger/data"

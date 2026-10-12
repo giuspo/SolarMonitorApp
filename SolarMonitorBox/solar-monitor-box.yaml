@@ -13,7 +13,7 @@ substitutions:
   sec_lon: !secret longitude
 
 packages:
-  adafruit_config: !include config.yaml
+  box_config: !include config.yaml
 
 esp32:
   board: esp32dev
@@ -34,7 +34,7 @@ wifi:
   password: !secret wifi_password
   power_save_mode: light
   ap:
-    ssid: "WiFi-Test Fallback"
+    ssid: ${fallback_ap_ssid}
     password: !secret fallback_password
   # Wi‑Fi state callbacks for LED indication
   on_connect:
@@ -74,7 +74,7 @@ sensor:
   - platform: wifi_signal
     name: "WiFi Signal Strength"
     id: rssi_signal
-    update_interval: 5s
+    update_interval: ${wifi_rssi_interval}
     unit_of_measurement: "dBm"
     accuracy_decimals: 0
 
@@ -97,7 +97,7 @@ sensor:
     power:
       name: "Potenza Pannello"
       id: panel_power
-    update_interval: 30s
+    update_interval: ${sensor_update_interval}
 
   # Sensore INA226 per la batteria (indirizzo 0x41, bus I2C separato)
   - platform: ina226
@@ -121,40 +121,44 @@ sensor:
     power:
       name: "Potenza Batteria"
       id: battery_power
-    update_interval: 30s
+    update_interval: ${sensor_update_interval}
 
   # Sensore di temperatura DS18B20 (bus 1-Wire su GPIO25)
   - platform: dallas_temp
     name: "Temperatura Quadretto"
     id: temp_quadretto
-    update_interval: 30s
+    update_interval: ${sensor_update_interval}
 
 # Configurazione I2C per INA226
 i2c:
   - id: i2c_solar
-    sda: GPIO21
-    scl: GPIO22
+    sda: ${i2c_solar_sda_pin}
+    scl: ${i2c_solar_scl_pin}
     scan: true
-    frequency: 400kHz
+    frequency: ${i2c_bus_frequency}
   - id: i2c_battery
-    sda: GPIO18
-    scl: GPIO19
+    sda: ${i2c_battery_sda_pin}
+    scl: ${i2c_battery_scl_pin}
     scan: true
-    frequency: 400kHz
+    frequency: ${i2c_bus_frequency}
 
 # Bus 1-Wire per DS18B20
 one_wire:
   - platform: gpio
-    pin: GPIO25
+    pin: ${temp_sensor_pin}
 
 # Define binary outputs for LEDs
 output:
   - platform: gpio
-    pin: GPIO27
+    pin: ${wifi_status_led_pin}
     id: status_led_output_wifi
   - platform: gpio
-    pin: GPIO4
+    pin: ${adafruit_status_led_pin}
     id: status_led_output_adafruit
+  - platform: ledc
+    pin: ${load_pwm_pin}
+    id: load_pwm_output
+    frequency: ${load_pwm_frequency}
 
 # Define binary lights using the outputs
 light:
@@ -166,16 +170,20 @@ light:
     name: "Adafruit Status LED"
     output: status_led_output_adafruit
     id: adafruit_status_led
+  - platform: monochromatic
+    name: "Test Carico LED"
+    output: load_pwm_output
+    id: test_load_led
 
 web_server:
-  port: 80
+  port: ${web_server_port}
   version: 2
 
 # Sincronizzazione orario
 time:
   - platform: sntp
     id: sntp_time
-    timezone: Europe/Rome
+    timezone: ${timezone}
     servers:
       - 0.pool.ntp.org
       - 1.pool.ntp.org
@@ -501,9 +509,9 @@ script:
 
 # Invia dati ogni 10 minuti
 interval:
-  - interval: 10min
+  - interval: ${adafruit_send_interval}
     then:
       - script.execute: send_to_adafruit
-  - interval: 30min
+  - interval: ${location_update_interval}
     then:
       - script.execute: fetch_location
