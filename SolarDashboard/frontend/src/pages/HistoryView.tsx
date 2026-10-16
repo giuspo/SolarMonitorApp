@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { api } from '../services/api';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, AreaChart, Area, ReferenceLine, Legend, Brush, Line } from 'recharts';
 import { ArrowLeft, Zap, Battery, Cloud, Sun, BatteryCharging, Maximize2, Minimize2, ChevronLeft, ChevronRight } from 'lucide-react';
-import { getPosition } from 'suncalc';
+import { useContainerWidth } from '../hooks/useContainerWidth';
+import { buildChartSeriesWithGaps, getResponsiveTicks, formatMinutesToHHMM } from '../utils/chartTimeHelpers';
 
 const LATITUDE = 44.95; // Default Vinovo (TO) se non impostato
 const LONGITUDE = 7.64;
@@ -31,6 +32,7 @@ export default function HistoryView() {
   const [hoverData, setHoverData] = useState<any>(null);
   const [brushRange, setBrushRange] = useState<any>(null);
   const [visible, setVisible] = useState({ w_pan: true, w_bat_charge: true, w_bat_discharge: true, sun_elevation: true });
+  const { ref: chartContainerRef, width: containerWidth } = useContainerWidth();
 
   useEffect(() => {
     api.getHistory().then(res => {
@@ -60,38 +62,19 @@ export default function HistoryView() {
   const loadDayDetails = async (date: string) => {
     setSelectedDate(date);
     setDayDetails(null);
+    setBrushRange(null);
+    setHoverData(null);
     try {
       const settingsRes = await api.getSettings().catch(() => null);
       const lat = settingsRes?.settings?.latitude ?? LATITUDE;
       const lon = settingsRes?.settings?.longitude ?? LONGITUDE;
 
       const res = await api.getHistoryDay(date);
-      let peakTime = '--:--';
-      let maxW = 0.1;
-      let minW = 0;
-
-      const formattedChart = (res.chartData || []).filter((d: any) => d.is_valid !== 0 && d.is_valid !== false).map((d: any) => {
-        const time = new Date(d.datetime_local).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
-        
-        if (d.w_pan !== undefined && d.w_pan !== null && Number(d.w_pan) > maxW) {
-            maxW = Number(d.w_pan);
-            peakTime = time;
-        }
-
-        const w_bat_charge = d.i_bat < 0 ? Math.abs(d.w_bat) : 0;
-        const w_bat_discharge = d.i_bat > 0 ? -Math.abs(d.w_bat) : 0;
-        
-        if (w_bat_discharge < minW) {
-            minW = w_bat_discharge;
-        }
-
-        const dateObj = new Date(d.datetime_local);
-        const sunPos = getPosition(dateObj, lat, lon);
-        let sun_elevation = sunPos.altitude;
-        if (sun_elevation < 0) sun_elevation = 0;
-
-        return { ...d, time, w_bat_charge, w_bat_discharge, sun_elevation };
-      });
+      const { chartData: formattedChart, peakTime, maxW, minW } = buildChartSeriesWithGaps(
+        res.chartData || [],
+        lat,
+        lon
+      );
       
       const roughStepL = (maxW - minW) / 5;
       const mag = Math.pow(10, Math.floor(Math.log10(roughStepL || 1)));
@@ -157,6 +140,11 @@ export default function HistoryView() {
         };
       }
     }
+
+    const lastValidRecord = chartData && chartData.length > 0
+      ? [...chartData].reverse().find((d: any) => !d.is_gap) || chartData[chartData.length - 1]
+      : null;
+    const xTicks = getResponsiveTicks(chartData, containerWidth, brushRange);
 
     return (
       <div className="p-4 flex flex-col gap-6 pb-24">
@@ -241,19 +229,31 @@ export default function HistoryView() {
               </button>
             </div>
           </div>
-          <div className={`touch-none ${isFullscreen ? 'flex-1 min-h-0' : 'h-[350px] md:h-[500px]'}`}>
+          <div ref={chartContainerRef} className={`touch-none ${isFullscreen ? 'flex-1 min-h-0' : 'h-[350px] md:h-[500px]'}`}>
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart key={brushKey} data={chartData} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
-              <XAxis dataKey="time" stroke="#475569" fontSize={12} tickLine={false} axisLine={false} />
+              <XAxis
+                type="number"
+                dataKey="timeMin"
+                domain={['dataMin', 'dataMax']}
+                ticks={xTicks}
+                tickFormatter={formatMinutesToHHMM}
+                niceTicks="none"
+                interval={0}
+                stroke="#475569"
+                fontSize={12}
+                tickLine={false}
+                axisLine={false}
+              />
               <YAxis yAxisId="left" stroke="#475569" fontSize={12} tickLine={false} axisLine={false} ticks={dayDetails.leftTicks} domain={[dayDetails.L_min || 0, dayDetails.L_max || 10]} />
               <YAxis yAxisId="right" orientation="right" stroke="#fb923c" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(val) => `${val}°`} ticks={dayDetails.rightTicks} domain={[dayDetails.R_min || 0, dayDetails.R_max || 90]} hide={!visible.sun_elevation} />
               <Tooltip content={<SyncTooltip setHoverData={setHoverData} />} cursor={{stroke: '#475569', strokeWidth: 1, strokeDasharray: '3 3'}} />
               <Legend verticalAlign="top" iconType="circle" wrapperStyle={{ fontSize: '12px', color: '#94a3b8', cursor: 'pointer' }} onClick={handleLegendClick} />
-              <Area yAxisId="left" hide={!visible.w_pan} type="monotone" dataKey="w_pan" name="Solare [W]" stroke={visible.w_pan ? "#facc15" : "#475569"} fill="#facc15" fillOpacity={0.2} strokeWidth={3} />
+              <Area yAxisId="left" hide={!visible.w_pan} type="monotone" dataKey="w_pan" name="Solare [W]" stroke={visible.w_pan ? "#facc15" : "#475569"} fill="#facc15" fillOpacity={0.2} strokeWidth={3} connectNulls={false} />
               <ReferenceLine yAxisId="left" y={0} stroke="#475569" strokeDasharray="3 3" />
-              <Area yAxisId="left" hide={!visible.w_bat_charge} type="monotone" dataKey="w_bat_charge" name="Batt. in Ricarica [W]" stroke={visible.w_bat_charge ? "#10b981" : "#475569"} fill="#10b981" fillOpacity={0.2} strokeWidth={3} />
-              <Area yAxisId="left" hide={!visible.w_bat_discharge} type="monotone" dataKey="w_bat_discharge" name="Batt. in Scarica [W]" stroke={visible.w_bat_discharge ? "#ef4444" : "#475569"} fill="#ef4444" fillOpacity={0.2} strokeWidth={3} />
-              <Line yAxisId="right" hide={!visible.sun_elevation} type="monotone" dataKey="sun_elevation" name="Elevazione Sole [°]" stroke={visible.sun_elevation ? "#fb923c" : "#475569"} strokeWidth={2} dot={false} strokeDasharray="5 5" />
+              <Area yAxisId="left" hide={!visible.w_bat_charge} type="monotone" dataKey="w_bat_charge" name="Batt. in Ricarica [W]" stroke={visible.w_bat_charge ? "#10b981" : "#475569"} fill="#10b981" fillOpacity={0.2} strokeWidth={3} connectNulls={false} />
+              <Area yAxisId="left" hide={!visible.w_bat_discharge} type="monotone" dataKey="w_bat_discharge" name="Batt. in Scarica [W]" stroke={visible.w_bat_discharge ? "#ef4444" : "#475569"} fill="#ef4444" fillOpacity={0.2} strokeWidth={3} connectNulls={false} />
+              <Line yAxisId="right" hide={!visible.sun_elevation} type="monotone" dataKey="sun_elevation" name="Elevazione Sole [°]" stroke={visible.sun_elevation ? "#fb923c" : "#475569"} strokeWidth={2} dot={false} strokeDasharray="5 5" connectNulls={true} />
               <Brush dataKey="time" height={30} stroke="#64748b" fill="#0f172a" travellerWidth={12} onChange={(e) => setBrushRange(e)} />
             </AreaChart>
           </ResponsiveContainer>
@@ -261,8 +261,30 @@ export default function HistoryView() {
           
           {/* Tabella Dati Interattiva */}
           {(() => {
-            const displayData = hoverData || (chartData && chartData.length > 0 ? chartData[chartData.length - 1] : null);
+            const displayData = hoverData || lastValidRecord;
             if (!displayData) return null;
+            if (displayData.is_gap) {
+              return (
+                <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-3 bg-slate-900/80 rounded-xl border border-amber-500/30 p-3">
+                  <div className="flex flex-col">
+                    <span className="text-slate-400 text-sm uppercase tracking-wider">Orario Rilevamento</span>
+                    <span className="font-bold text-slate-200 text-lg">{displayData.time} <span className="text-xs font-medium text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full ml-1">Offline</span></span>
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-slate-400 text-sm uppercase tracking-wider">☀️ Pannello</span>
+                    <span className="font-bold text-slate-500 text-lg">Nessun dato <span className="text-sm text-slate-400 font-normal">(☀️ {displayData.sun_elevation != null ? Math.round(displayData.sun_elevation) : '--'}°)</span></span>
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-slate-400 text-sm uppercase tracking-wider">🔋 Batteria</span>
+                    <span className="font-bold text-slate-500 text-lg">Nessun dato</span>
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-slate-400 text-sm uppercase tracking-wider">🌡️ Meteo & Box</span>
+                    <span className="font-bold text-slate-500 text-lg">Dispositivo offline</span>
+                  </div>
+                </div>
+              );
+            }
             return (
               <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-3 bg-slate-900/80 rounded-xl border border-slate-700 p-3">
                 <div className="flex flex-col">
