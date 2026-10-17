@@ -2,8 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { api } from '../services/api';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, AreaChart, Area, ReferenceLine, Legend, Brush, Line } from 'recharts';
 import { ArrowLeft, Zap, Battery, Cloud, Sun, BatteryCharging, Maximize2, Minimize2, ChevronLeft, ChevronRight } from 'lucide-react';
-import { useContainerWidth } from '../hooks/useContainerWidth';
+import { useContainerWidth, useChartFullscreen } from '../hooks/useContainerWidth';
 import { buildChartSeriesWithGaps, getResponsiveTicks, formatMinutesToHHMM } from '../utils/chartTimeHelpers';
+import { TouchTraveller, CompactChartHud } from '../components/TouchTraveller';
 
 const LATITUDE = 44.95; // Default Vinovo (TO) se non impostato
 const LONGITUDE = 7.64;
@@ -27,7 +28,7 @@ export default function HistoryView() {
   const [dayDetails, setDayDetails] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   
-  const [isFullscreen, setIsFullscreen] = useState(false);
+  const { isFullscreen, isLandscape, viewportHeight, toggleFullscreen } = useChartFullscreen();
   const [brushKey, setBrushKey] = useState(0);
   const [hoverData, setHoverData] = useState<any>(null);
   const [brushRange, setBrushRange] = useState<any>(null);
@@ -145,6 +146,12 @@ export default function HistoryView() {
       ? [...chartData].reverse().find((d: any) => !d.is_gap) || chartData[chartData.length - 1]
       : null;
     const xTicks = getResponsiveTicks(chartData, containerWidth, brushRange);
+    const isLandscapeSplit = isLandscape && (isFullscreen || viewportHeight < 540);
+    const isMobile = containerWidth < 640 || isLandscapeSplit;
+    const brushHeight = isLandscapeSplit ? 28 : isMobile ? 42 : 32;
+    const travellerWidth = isMobile ? 28 : 14;
+    const zoomStartTime = isSelection && chartData[brushRange.startIndex] ? chartData[brushRange.startIndex].time : null;
+    const zoomEndTime = isSelection && chartData[brushRange.endIndex] ? chartData[brushRange.endIndex].time : null;
 
     return (
       <div className="p-4 flex flex-col gap-6 pb-24">
@@ -216,100 +223,92 @@ export default function HistoryView() {
           </div>
         </div>
 
-        <div className={isFullscreen ? "fixed inset-0 z-[60] bg-slate-900 p-4 flex flex-col" : "bg-slate-800 p-4 rounded-2xl border border-slate-700 mt-2 flex flex-col"}>
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-sm text-slate-400">Curva Solare (W)</h2>
+        <div className={isFullscreen ? "fixed inset-0 z-[60] bg-slate-900 p-2.5 flex flex-col" : "bg-slate-800 p-4 rounded-2xl border border-slate-700 mt-2 flex flex-col"}>
+          <div className="flex justify-between items-center mb-1.5 shrink-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h2 className="text-sm text-slate-400">Curva Solare (W)</h2>
+              {zoomStartTime && zoomEndTime && (
+                <span className="text-[11px] font-medium text-sky-400 bg-sky-500/10 border border-sky-500/20 px-2 py-0.5 rounded-full">
+                  {zoomStartTime} ➔ {zoomEndTime}
+                </span>
+              )}
+            </div>
             <div className="flex gap-2">
-              
               <button onClick={() => { setBrushKey(k => k + 1); setBrushRange(null); }} className="text-xs text-slate-400 hover:text-white bg-slate-800/50 px-2 py-1 rounded-lg border border-slate-700">
                 Reset Zoom
               </button>
-              <button onClick={() => setIsFullscreen(!isFullscreen)} className="text-slate-400 hover:text-white bg-slate-800/50 p-1.5 rounded-lg border border-slate-700">
+              <button onClick={toggleFullscreen} className="text-slate-400 hover:text-white bg-slate-800/50 p-1.5 rounded-lg border border-slate-700">
                 {isFullscreen ? <Minimize2 className="w-5 h-5" /> : <Maximize2 className="w-5 h-5" />}
               </button>
             </div>
           </div>
-          <div ref={chartContainerRef} className={`touch-none ${isFullscreen ? 'flex-1 min-h-0' : 'h-[350px] md:h-[500px]'}`}>
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart key={brushKey} data={chartData} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
-              <XAxis
-                type="number"
-                dataKey="timeMin"
-                domain={['dataMin', 'dataMax']}
-                ticks={xTicks}
-                tickFormatter={formatMinutesToHHMM}
-                niceTicks="none"
-                interval={0}
-                stroke="#475569"
-                fontSize={12}
-                tickLine={false}
-                axisLine={false}
-              />
-              <YAxis yAxisId="left" stroke="#475569" fontSize={12} tickLine={false} axisLine={false} ticks={dayDetails.leftTicks} domain={[dayDetails.L_min || 0, dayDetails.L_max || 10]} />
-              <YAxis yAxisId="right" orientation="right" stroke="#fb923c" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(val) => `${val}°`} ticks={dayDetails.rightTicks} domain={[dayDetails.R_min || 0, dayDetails.R_max || 90]} hide={!visible.sun_elevation} />
-              <Tooltip content={<SyncTooltip setHoverData={setHoverData} />} cursor={{stroke: '#475569', strokeWidth: 1, strokeDasharray: '3 3'}} />
-              <Legend verticalAlign="top" iconType="circle" wrapperStyle={{ fontSize: '12px', color: '#94a3b8', cursor: 'pointer' }} onClick={handleLegendClick} />
-              <Area yAxisId="left" hide={!visible.w_pan} type="monotone" dataKey="w_pan" name="Solare [W]" stroke={visible.w_pan ? "#facc15" : "#475569"} fill="#facc15" fillOpacity={0.2} strokeWidth={3} connectNulls={false} />
-              <ReferenceLine yAxisId="left" y={0} stroke="#475569" strokeDasharray="3 3" />
-              <Area yAxisId="left" hide={!visible.w_bat_charge} type="monotone" dataKey="w_bat_charge" name="Batt. in Ricarica [W]" stroke={visible.w_bat_charge ? "#10b981" : "#475569"} fill="#10b981" fillOpacity={0.2} strokeWidth={3} connectNulls={false} />
-              <Area yAxisId="left" hide={!visible.w_bat_discharge} type="monotone" dataKey="w_bat_discharge" name="Batt. in Scarica [W]" stroke={visible.w_bat_discharge ? "#ef4444" : "#475569"} fill="#ef4444" fillOpacity={0.2} strokeWidth={3} connectNulls={false} />
-              <Line yAxisId="right" hide={!visible.sun_elevation} type="monotone" dataKey="sun_elevation" name="Elevazione Sole [°]" stroke={visible.sun_elevation ? "#fb923c" : "#475569"} strokeWidth={2} dot={false} strokeDasharray="5 5" connectNulls={true} />
-              <Brush dataKey="time" height={30} stroke="#64748b" fill="#0f172a" travellerWidth={12} onChange={(e) => setBrushRange(e)} />
-            </AreaChart>
-          </ResponsiveContainer>
+
+          <div className={`flex-1 min-h-0 flex ${isLandscapeSplit ? 'flex-row gap-2.5 items-stretch' : 'flex-col'}`}>
+            <div
+              ref={chartContainerRef}
+              className={`touch-none ${
+                isFullscreen
+                  ? 'flex-1 min-w-0 min-h-0'
+                  : isLandscapeSplit
+                    ? 'flex-1 min-w-0 h-[280px]'
+                    : 'h-[400px] md:h-[520px]'
+              }`}
+            >
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart key={brushKey} data={chartData} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
+                  <XAxis
+                    type="number"
+                    dataKey="timeMin"
+                    domain={['dataMin', 'dataMax']}
+                    ticks={xTicks}
+                    tickFormatter={formatMinutesToHHMM}
+                    niceTicks="none"
+                    interval={0}
+                    stroke="#475569"
+                    fontSize={12}
+                    tickLine={false}
+                    axisLine={false}
+                  />
+                  <YAxis yAxisId="left" stroke="#475569" fontSize={12} tickLine={false} axisLine={false} ticks={dayDetails.leftTicks} domain={[dayDetails.L_min || 0, dayDetails.L_max || 10]} />
+                  <YAxis yAxisId="right" orientation="right" stroke="#fb923c" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(val) => `${val}°`} ticks={dayDetails.rightTicks} domain={[dayDetails.R_min || 0, dayDetails.R_max || 90]} hide={!visible.sun_elevation} />
+                  <Tooltip content={<SyncTooltip setHoverData={setHoverData} />} cursor={{stroke: '#475569', strokeWidth: 1, strokeDasharray: '3 3'}} />
+                  <Legend verticalAlign="top" iconType="circle" wrapperStyle={{ fontSize: '11px', color: '#94a3b8', cursor: 'pointer', paddingBottom: '4px' }} onClick={handleLegendClick} />
+                  <Area yAxisId="left" hide={!visible.w_pan} type="monotone" dataKey="w_pan" name={isMobile ? "Solare" : "Solare [W]"} stroke={visible.w_pan ? "#facc15" : "#475569"} fill="#facc15" fillOpacity={0.2} strokeWidth={3} connectNulls={false} />
+                  <ReferenceLine yAxisId="left" y={0} stroke="#475569" strokeDasharray="3 3" />
+                  <Area yAxisId="left" hide={!visible.w_bat_charge} type="monotone" dataKey="w_bat_charge" name={isMobile ? "Ricarica" : "Batt. in Ricarica [W]"} stroke={visible.w_bat_charge ? "#10b981" : "#475569"} fill="#10b981" fillOpacity={0.2} strokeWidth={3} connectNulls={false} />
+                  <Area yAxisId="left" hide={!visible.w_bat_discharge} type="monotone" dataKey="w_bat_discharge" name={isMobile ? "Scarica" : "Batt. in Scarica [W]"} stroke={visible.w_bat_discharge ? "#ef4444" : "#475569"} fill="#ef4444" fillOpacity={0.2} strokeWidth={3} connectNulls={false} />
+                  <Line yAxisId="right" hide={!visible.sun_elevation} type="monotone" dataKey="sun_elevation" name={isMobile ? "Sole [°]" : "Elevazione Sole [°]"} stroke={visible.sun_elevation ? "#fb923c" : "#475569"} strokeWidth={2} dot={false} strokeDasharray="5 5" connectNulls={true} />
+                  <Brush
+                    dataKey="time"
+                    height={brushHeight}
+                    travellerWidth={travellerWidth}
+                    traveller={<TouchTraveller />}
+                    stroke="#64748b"
+                    fill="#0f172a"
+                    onChange={(e) => setBrushRange(e)}
+                  >
+                    <AreaChart data={chartData}>
+                      <Area
+                        type="monotone"
+                        dataKey="w_pan"
+                        stroke="#facc15"
+                        fill="#facc15"
+                        fillOpacity={0.25}
+                        strokeWidth={1}
+                        connectNulls={false}
+                      />
+                    </AreaChart>
+                  </Brush>
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+            
+            {/* Scheda Dati Interattiva (a destra in Landscape, sotto in Portrait) */}
+            <CompactChartHud
+              displayData={hoverData || lastValidRecord}
+              layout={isLandscapeSplit ? 'sidebar' : 'bottom'}
+            />
           </div>
-          
-          {/* Tabella Dati Interattiva */}
-          {(() => {
-            const displayData = hoverData || lastValidRecord;
-            if (!displayData) return null;
-            if (displayData.is_gap) {
-              return (
-                <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-3 bg-slate-900/80 rounded-xl border border-amber-500/30 p-3">
-                  <div className="flex flex-col">
-                    <span className="text-slate-400 text-sm uppercase tracking-wider">Orario Rilevamento</span>
-                    <span className="font-bold text-slate-200 text-lg">{displayData.time} <span className="text-xs font-medium text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full ml-1">Offline</span></span>
-                  </div>
-                  <div className="flex flex-col">
-                    <span className="text-slate-400 text-sm uppercase tracking-wider">☀️ Pannello</span>
-                    <span className="font-bold text-slate-500 text-lg">Nessun dato <span className="text-sm text-slate-400 font-normal">(☀️ {displayData.sun_elevation != null ? Math.round(displayData.sun_elevation) : '--'}°)</span></span>
-                  </div>
-                  <div className="flex flex-col">
-                    <span className="text-slate-400 text-sm uppercase tracking-wider">🔋 Batteria</span>
-                    <span className="font-bold text-slate-500 text-lg">Nessun dato</span>
-                  </div>
-                  <div className="flex flex-col">
-                    <span className="text-slate-400 text-sm uppercase tracking-wider">🌡️ Meteo & Box</span>
-                    <span className="font-bold text-slate-500 text-lg">Dispositivo offline</span>
-                  </div>
-                </div>
-              );
-            }
-            return (
-              <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-3 bg-slate-900/80 rounded-xl border border-slate-700 p-3">
-                <div className="flex flex-col">
-                  <span className="text-slate-400 text-sm uppercase tracking-wider">Orario Rilevamento</span>
-                  <span className="font-bold text-slate-200 text-lg">{displayData.time}</span>
-                </div>
-                <div className="flex flex-col">
-                  <span className="text-slate-400 text-sm uppercase tracking-wider">☀️ Pannello</span>
-                  <span className="font-bold text-yellow-400 text-lg">{displayData.w_pan?.toFixed(1) ?? '--'} W <span className="text-sm text-slate-400 font-normal">({displayData.v_pan?.toFixed(1)}V • {displayData.i_pan?.toFixed(2)}A • ☀️ {displayData.sun_elevation != null ? Math.round(displayData.sun_elevation) : '--'}°)</span></span>
-                </div>
-                <div className="flex flex-col">
-                  <span className="text-slate-400 text-sm uppercase tracking-wider">🔋 Batteria</span>
-                  <span className={`font-bold ${displayData.i_bat < 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                    {Math.abs(displayData.w_bat || 0).toFixed(1)} W <span className="text-sm text-slate-400 font-normal">({displayData.v_bat?.toFixed(1)}V • {displayData.i_bat?.toFixed(2)}A)</span>
-                  </span>
-                </div>
-                <div className="flex flex-col">
-                  <span className="text-slate-400 text-sm uppercase tracking-wider">🌡️ Meteo & Box</span>
-                  <span className="font-bold text-slate-300 text-lg">
-                    {displayData.t_box?.toFixed(1)}°C <span className="text-sm text-slate-400 font-normal">({displayData.cloud >= 0 ? Math.round(displayData.cloud * 100) : '--'}% Nuvole)</span>
-                  </span>
-                </div>
-              </div>
-            );
-          })()}
         </div>
       </div>
     );
