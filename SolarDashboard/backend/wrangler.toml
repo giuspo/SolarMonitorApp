@@ -1,10 +1,19 @@
-﻿name = "solar-dashboard-backend"
+name = "solar-dashboard-backend"
 main = "src/index.ts"
 compatibility_date = "2024-03-20"
 
 [vars]
-ADAFRUIT_USERNAME = "giuspo" # CAMBIA QUESTO COL TUO VERO NOME ADAFRUIT
+ADAFRUIT_USERNAME = "giuspo"
 ADAFRUIT_FEED = "solar-data-logger"
+
+# IMPORTANTE: NON inserire mai password, API Key o Client ID in chiaro in questo file o nel codice sorgente.
+# Tutte le chiavi segrete vengono lette a runtime dalle variabili d'ambiente cifrate di Cloudflare (c.env).
+# Configurale tramite Wrangler CLI (`npx wrangler secret put <NOME_VARIABILE>`):
+# - AUTH_SECRET
+# - ESP32_API_KEY
+# - GOOGLE_CLIENT_ID
+# - ADAFRUIT_AIO_KEY
+
 
 [triggers]
 crons = ["*/15 * * * *"]
