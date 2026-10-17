@@ -5,6 +5,7 @@ compatibility_date = "2024-03-20"
 [vars]
 ADAFRUIT_USERNAME = "giuspo"
 ADAFRUIT_FEED = "solar-data-logger"
+FRONTEND_ORIGIN = "https://spog-solar-monitor-box.pages.dev,http://localhost:5173,http://localhost:4173"
 
 # IMPORTANTE: NON inserire mai password, API Key o Client ID in chiaro in questo file o nel codice sorgente.
 # Tutte le chiavi segrete vengono lette a runtime dalle variabili d'ambiente cifrate di Cloudflare (c.env).

@@ -21,11 +21,11 @@ export interface Env {
 type Variables = { userEmail: string };
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
-// Abilita CORS (restrittivo se FRONTEND_ORIGIN è configurato)
+// Abilita CORS fail-closed (consente solo le origini esplicitamente dichiarate in FRONTEND_ORIGIN)
 app.use('/api/*', cors({
   origin: (origin, c) => {
     const allowedOrigin = c.env.FRONTEND_ORIGIN;
-    if (!allowedOrigin || allowedOrigin === '*') return origin || '*';
+    if (!allowedOrigin) return '';
     const allowedList = allowedOrigin.split(',').map((o: string) => o.trim());
     return allowedList.includes(origin) ? origin : '';
   },
@@ -51,7 +51,6 @@ async function requireFrontendAuth(c: Context<{ Bindings: Env; Variables: Variab
     console.error('CRITICAL: Variabile d\'ambiente c.env.AUTH_SECRET mancante.');
     return c.json({ error: 'Unauthorized: Configurazione sessione mancante' }, 401);
   }
-
 
   // Supporta sia Cookie di sessione HttpOnly sia header Authorization: Bearer <token>
   let token = getCookie(c, '__Host-session');
@@ -95,6 +94,20 @@ async function requireFrontendAuth(c: Context<{ Bindings: Env; Variables: Variab
   await next();
 }
 
+// --- GUARDIA GLOBALE FAIL-CLOSED (ANTEPOSTA A TUTTE LE ROUTE) ---
+const PUBLIC_ROUTES = new Set(['GET /api/status', 'POST /api/auth/social-login']);
+const HARDWARE_ROUTES = new Set(['POST /api/telemetry']);
+
+app.use('/api/*', async (c, next) => {
+  const key = `${c.req.method} ${c.req.path}`;
+  if (PUBLIC_ROUTES.has(key)) return next();
+  if (HARDWARE_ROUTES.has(key)) return requireHardwareApiKey(c, next);
+  return requireFrontendAuth(c, next);
+});
+
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const MONTH_RE = /^\d{4}-\d{2}$/;
+
 // --- 1. ROUTE PUBBLICHE ---
 app.get('/api/status', (c) => c.json({ status: 'ok', version: APP_VERSION }));
 
@@ -126,20 +139,23 @@ app.post('/api/auth/social-login', async (c) => {
     secure: true,
     sameSite: 'Strict',
     path: '/',
-    maxAge: 7 * 24 * 60 * 60,
+    maxAge: 24 * 60 * 60,
   });
 
   return c.json({ success: true, token: apiToken, user: googleUser });
 });
 
-// --- 2. ROUTE HARDWARE ESP32 (Protette da X-API-Key statica) ---
-app.post('/api/telemetry', requireHardwareApiKey, async (c) => {
+// --- 2. ROUTE HARDWARE ESP32 (Protette da requireHardwareApiKey tramite guardia globale) ---
+app.post('/api/telemetry', async (c) => {
   const payload = await c.req.json<AdafruitPayload | AdafruitPayload[]>().catch(() => null);
   if (!payload) {
     return c.json({ error: 'Payload JSON non valido' }, 400);
   }
 
   const records = Array.isArray(payload) ? payload : [payload];
+  if (records.length === 0 || records.length > 500) {
+    return c.json({ error: 'Numero di record non valido (max 500)' }, 413);
+  }
   for (const r of records) {
     if (typeof r.tstamp !== 'number' || !Number.isFinite(r.tstamp) || r.tstamp <= 0) {
       return c.json({ error: 'Campo tstamp mancante o non valido' }, 400);
@@ -158,9 +174,7 @@ app.post('/api/telemetry', requireHardwareApiKey, async (c) => {
   }
 });
 
-// --- 3. ROUTE PROTETTE FRONTEND WEB (Protette da JWT / Cookie) ---
-app.use('/api/*', requireFrontendAuth);
-
+// --- 3. ROUTE PROTETTE FRONTEND WEB (Protette da requireFrontendAuth tramite guardia globale) ---
 app.post('/api/sync', async (c) => {
   try {
     const records = await fetchAdafruitData(c.env, 1000);
@@ -169,7 +183,7 @@ app.post('/api/sync', async (c) => {
     return c.json({ success: true, fetched: records.length, inserted });
   } catch (error: any) {
     console.error('SYNC ERROR:', error);
-    return c.json({ success: false, error: error.message }, 500);
+    return c.json({ success: false, error: 'Errore interno durante la sincronizzazione' }, 500);
   }
 });
 
@@ -186,6 +200,9 @@ app.get('/api/today', async (c) => {
 app.get('/api/history-range', async (c) => {
   const start = c.req.query('start');
   const end = c.req.query('end');
+  if (!start || !end || !DATE_RE.test(start) || !DATE_RE.test(end)) {
+    return c.json({ success: false, error: 'Parametri data start/end non validi (atteso YYYY-MM-DD)' }, 400);
+  }
   try {
     const { results: rawData } = await c.env.DB.prepare(`
       SELECT * FROM solar_records 
@@ -194,12 +211,16 @@ app.get('/api/history-range', async (c) => {
     `).bind(start, end).all();
     return c.json({ success: true, data: rawData });
   } catch (err: any) {
-    return c.json({ success: false, error: err.message }, 500);
+    console.error('HISTORY RANGE ERROR:', err);
+    return c.json({ success: false, error: 'Errore interno recupero storico' }, 500);
   }
 });
 
 app.get('/api/history-month/:month', async (c) => {
   const month = c.req.param('month'); // e.g. "2026-09"
+  if (!MONTH_RE.test(month)) {
+    return c.json({ success: false, error: 'Formato mese non valido (atteso YYYY-MM)' }, 400);
+  }
   try {
     const { results: rawData } = await c.env.DB.prepare(`
       SELECT * FROM solar_records 
@@ -209,12 +230,16 @@ app.get('/api/history-month/:month', async (c) => {
 
     return c.json({ success: true, data: rawData });
   } catch (err: any) {
-    return c.json({ success: false, error: err.message }, 500);
+    console.error('HISTORY MONTH ERROR:', err);
+    return c.json({ success: false, error: 'Errore interno recupero storico mensile' }, 500);
   }
 });
 
 app.get('/api/history/:date', async (c) => {
   const dateStr = c.req.param('date');
+  if (!DATE_RE.test(dateStr)) {
+    return c.json({ success: false, error: 'Formato data non valido (atteso YYYY-MM-DD)' }, 400);
+  }
   const summary = await c.env.DB.prepare('SELECT * FROM daily_summaries WHERE date = ?').bind(dateStr).first();
   const { results: chartData } = await c.env.DB.prepare(
     'SELECT * FROM solar_records WHERE date(datetime_local) = ? ORDER BY tstamp ASC'
@@ -235,9 +260,14 @@ app.get('/api/settings', async (c) => {
 
 app.post('/api/settings', async (c) => {
   const email = c.get('userEmail');
-  const body = await c.req.json();
+  const body = await c.req.json().catch(() => null);
+  const lat = Number(body?.latitude);
+  const lon = Number(body?.longitude);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) {
+    return c.json({ success: false, error: 'Coordinate geografiche non valide' }, 400);
+  }
   await c.env.DB.prepare('UPDATE authorized_users SET latitude = ?, longitude = ? WHERE email = ?')
-    .bind(body.latitude, body.longitude, email)
+    .bind(lat, lon, email)
     .run();
   return c.json({ success: true });
 });
@@ -251,7 +281,9 @@ export default {
       if (inserted > 0) {
         await updateDailySummary(env);
       }
-    } catch (e) {}
+    } catch (e) {
+      console.error('CRON SYNC ERROR:', e);
+    }
   }
 };
 

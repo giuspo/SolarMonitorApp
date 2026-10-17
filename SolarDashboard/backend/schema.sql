@@ -37,6 +37,5 @@ CREATE TABLE IF NOT EXISTS authorized_users (
     longitude REAL
 );
 
--- Inserisci qui la tua email Google per essere autorizzato al login
-INSERT OR IGNORE INTO authorized_users (email) VALUES ('giuliosporti@gmail.com');
-
+-- Per autorizzare un utente al login, esegui manualmente (non committare email reali nel repository):
+-- npx wrangler d1 execute solar-db --remote --command="INSERT OR IGNORE INTO authorized_users (email) VALUES ('tua-email@esempio.com');"

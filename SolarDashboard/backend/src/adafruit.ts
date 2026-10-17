@@ -1,4 +1,4 @@
-﻿import { Env } from './index';
+import { Env } from './index';
 
 export interface AdafruitPayload {
   tstamp: number;
@@ -16,8 +16,6 @@ export interface AdafruitPayload {
 
 export async function fetchAdafruitData(env: Env, limit: number = 15): Promise<AdafruitPayload[]> {
   const url = `https://io.adafruit.com/api/v2/${env.ADAFRUIT_USERNAME}/feeds/${env.ADAFRUIT_FEED}/data?limit=${limit}`;
-  
-  console.log('DEBUG URL CHIAMATO:', url);
   const response = await fetch(url, {
     headers: {
       'X-AIO-Key': env.ADAFRUIT_AIO_KEY,

@@ -66,7 +66,7 @@ export async function generateApiToken(email: string, env: Env): Promise<string>
     {
       email,
       iat: nowSec,
-      exp: nowSec + 7 * 24 * 60 * 60, // Scade tra 7 giorni
+      exp: nowSec + 24 * 60 * 60, // Scade tra 24 ore
     },
     secret,
     { algorithm: 'HS256' }
