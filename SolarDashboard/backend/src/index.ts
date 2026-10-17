@@ -1,7 +1,7 @@
 import { Hono, Context, Next } from 'hono';
 import { APP_VERSION } from './version';
 import { cors } from 'hono/cors';
-import { getCookie, setCookie } from 'hono/cookie';
+import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
 import { fetchAdafruitData, AdafruitPayload } from './adafruit';
 import { saveRecordsToD1, updateDailySummary } from './db';
 import { verifyGoogleToken, generateApiToken, verifyStaticApiKey } from './auth';
@@ -20,6 +20,24 @@ export interface Env {
 
 type Variables = { userEmail: string };
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
+
+// Rate limiter leggero per proteggere endpoint sensibili/costosi (L4)
+const rateLimitBuckets = new Map<string, { count: number; resetAt: number }>();
+function isRateLimited(key: string, maxRequests: number, windowMs: number): boolean {
+  const now = Date.now();
+  if (rateLimitBuckets.size > 1000) {
+    for (const [k, v] of rateLimitBuckets) {
+      if (v.resetAt <= now) rateLimitBuckets.delete(k);
+    }
+  }
+  const entry = rateLimitBuckets.get(key);
+  if (!entry || entry.resetAt <= now) {
+    rateLimitBuckets.set(key, { count: 1, resetAt: now + windowMs });
+    return false;
+  }
+  entry.count += 1;
+  return entry.count > maxRequests;
+}
 
 // Abilita CORS fail-closed (consente solo le origini esplicitamente dichiarate in FRONTEND_ORIGIN)
 app.use('/api/*', cors({
@@ -77,16 +95,18 @@ async function requireFrontendAuth(c: Context<{ Bindings: Env; Variables: Variab
       return c.json({ error: 'Unauthorized: Payload token non valido' }, 401);
     }
 
-    // Verifica attiva sulla whitelist per garantire revoca immediata degli utenti rimossi
+    const normalizedEmail = email.trim().toLowerCase();
+
+    // Verifica attiva sulla whitelist (case-insensitive) per garantire revoca immediata degli utenti rimossi
     const dbUser = await c.env.DB.prepare(
-      'SELECT email FROM authorized_users WHERE email = ?'
-    ).bind(email).first();
+      'SELECT email FROM authorized_users WHERE lower(email) = lower(?)'
+    ).bind(normalizedEmail).first();
 
     if (!dbUser) {
       return c.json({ error: 'Unauthorized: Utente non più autorizzato' }, 401);
     }
 
-    c.set('userEmail', email);
+    c.set('userEmail', normalizedEmail);
   } catch {
     return c.json({ error: 'Unauthorized: Token non valido o scaduto' }, 401);
   }
@@ -95,7 +115,7 @@ async function requireFrontendAuth(c: Context<{ Bindings: Env; Variables: Variab
 }
 
 // --- GUARDIA GLOBALE FAIL-CLOSED (ANTEPOSTA A TUTTE LE ROUTE) ---
-const PUBLIC_ROUTES = new Set(['GET /api/status', 'POST /api/auth/social-login']);
+const PUBLIC_ROUTES = new Set(['GET /api/status', 'POST /api/auth/social-login', 'POST /api/auth/logout']);
 const HARDWARE_ROUTES = new Set(['POST /api/telemetry']);
 
 app.use('/api/*', async (c, next) => {
@@ -112,6 +132,11 @@ const MONTH_RE = /^\d{4}-\d{2}$/;
 app.get('/api/status', (c) => c.json({ status: 'ok', version: APP_VERSION }));
 
 app.post('/api/auth/social-login', async (c) => {
+  const clientIp = c.req.header('CF-Connecting-IP') || 'unknown';
+  if (isRateLimited(`login:${clientIp}`, 10, 60_000)) {
+    return c.json({ error: 'Troppi tentativi di login. Riprova tra un minuto.' }, 429);
+  }
+
   const body = await c.req.json().catch(() => null);
   const idToken = body?.idToken;
   if (!idToken || typeof idToken !== 'string') {
@@ -124,7 +149,7 @@ app.post('/api/auth/social-login', async (c) => {
   }
 
   const dbUser = await c.env.DB.prepare(
-    'SELECT email FROM authorized_users WHERE email = ?'
+    'SELECT email FROM authorized_users WHERE lower(email) = lower(?)'
   ).bind(googleUser.email).first();
 
   if (!dbUser) {
@@ -145,6 +170,11 @@ app.post('/api/auth/social-login', async (c) => {
   return c.json({ success: true, token: apiToken, user: googleUser });
 });
 
+app.post('/api/auth/logout', (c) => {
+  deleteCookie(c, '__Host-session', { path: '/', secure: true });
+  return c.json({ success: true });
+});
+
 // --- 2. ROUTE HARDWARE ESP32 (Protette da requireHardwareApiKey tramite guardia globale) ---
 app.post('/api/telemetry', async (c) => {
   const payload = await c.req.json<AdafruitPayload | AdafruitPayload[]>().catch(() => null);
@@ -156,8 +186,15 @@ app.post('/api/telemetry', async (c) => {
   if (records.length === 0 || records.length > 500) {
     return c.json({ error: 'Numero di record non valido (max 500)' }, 413);
   }
+  const nowSec = Math.floor(Date.now() / 1000);
+  const MIN_TS = 1704067200; // 2024-01-01T00:00:00Z
   for (const r of records) {
-    if (typeof r.tstamp !== 'number' || !Number.isFinite(r.tstamp) || r.tstamp <= 0) {
+    if (
+      typeof r.tstamp !== 'number' ||
+      !Number.isInteger(r.tstamp) ||
+      r.tstamp < MIN_TS ||
+      r.tstamp > nowSec + 300
+    ) {
       return c.json({ error: 'Campo tstamp mancante o non valido' }, 400);
     }
   }
@@ -176,6 +213,11 @@ app.post('/api/telemetry', async (c) => {
 
 // --- 3. ROUTE PROTETTE FRONTEND WEB (Protette da requireFrontendAuth tramite guardia globale) ---
 app.post('/api/sync', async (c) => {
+  const userEmail = c.get('userEmail');
+  if (isRateLimited(`sync:${userEmail}`, 6, 60_000)) {
+    return c.json({ success: false, error: 'Sincronizzazione troppo frequente. Attendi qualche secondo.' }, 429);
+  }
+
   try {
     const records = await fetchAdafruitData(c.env, 1000);
     const { inserted } = await saveRecordsToD1(c.env, records);
@@ -254,7 +296,7 @@ app.get('/api/history', async (c) => {
 
 app.get('/api/settings', async (c) => {
   const email = c.get('userEmail');
-  const user = await c.env.DB.prepare('SELECT latitude, longitude FROM authorized_users WHERE email = ?').bind(email).first();
+  const user = await c.env.DB.prepare('SELECT latitude, longitude FROM authorized_users WHERE lower(email) = lower(?)').bind(email).first();
   return c.json({ success: true, settings: user });
 });
 
@@ -266,7 +308,7 @@ app.post('/api/settings', async (c) => {
   if (!Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) {
     return c.json({ success: false, error: 'Coordinate geografiche non valide' }, 400);
   }
-  await c.env.DB.prepare('UPDATE authorized_users SET latitude = ?, longitude = ? WHERE email = ?')
+  await c.env.DB.prepare('UPDATE authorized_users SET latitude = ?, longitude = ? WHERE lower(email) = lower(?)')
     .bind(lat, lon, email)
     .run();
   return c.json({ success: true });

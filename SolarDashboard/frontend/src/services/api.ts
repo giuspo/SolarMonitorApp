@@ -24,16 +24,21 @@ async function fetchWithAuth(endpoint: string, options: RequestInit = {}) {
 export const api = {
   getToday: () => fetchWithAuth('/today'),
   getHistory: () => fetchWithAuth('/history'),
-  getHistoryDay: (date: string) => fetchWithAuth('/history/' + date),
-  getHistoryMonth: (month: string) => fetchWithAuth('/history-month/' + month),
-  getHistoryRange: (start: string, end: string) => fetchWithAuth(`/history-range?start=${start}&end=${end}`),
+  getHistoryDay: (date: string) => fetchWithAuth('/history/' + encodeURIComponent(date)),
+  getHistoryMonth: (month: string) => fetchWithAuth('/history-month/' + encodeURIComponent(month)),
+  getHistoryRange: (start: string, end: string) =>
+    fetchWithAuth(`/history-range?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`),
   syncData: () => fetchWithAuth('/sync', { method: 'POST' }),
   getStatus: () => fetchWithAuth('/status'),
   getSettings: () => fetchWithAuth('/settings'),
   updateSettings: (data: { latitude: number, longitude: number }) => fetchWithAuth('/settings', {
     method: 'POST',
     body: JSON.stringify(data)
-  })
+  }),
+  logout: () => fetch(`${API_BASE}/auth/logout`, {
+    method: 'POST',
+    credentials: 'include'
+  }).catch(() => null)
 };
 
 

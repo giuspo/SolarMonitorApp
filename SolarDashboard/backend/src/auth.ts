@@ -46,9 +46,10 @@ export async function verifyGoogleToken(
       return null;
     }
 
+    const normalizedEmail = data.email.trim().toLowerCase();
     return {
-      email: data.email,
-      name: typeof data.name === 'string' ? data.name : data.email,
+      email: normalizedEmail,
+      name: typeof data.name === 'string' ? data.name : normalizedEmail,
     };
   } catch {
     return null;
