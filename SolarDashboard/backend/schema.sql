@@ -11,7 +11,11 @@ CREATE TABLE IF NOT EXISTS solar_records (
     rssi INTEGER,                       -- Wi-Fi RSSI (dBm)
     is_valid BOOLEAN NOT NULL,          -- Flag validità fisica
     t_box REAL,                         -- Temp quadretto (°C)
-    cloud REAL                          -- Nuvolosità (0.00 - 1.00)
+    h_box REAL,                         -- Umidità quadretto (%)
+    cloud REAL,                         -- Nuvolosità (0.00 - 1.00)
+    load_pwm REAL DEFAULT 0,            -- Duty cycle PWM carico (0.00 - 1.00)
+    is_load_cut BOOLEAN DEFAULT 0,      -- Flag protezione batteria LVD intervenuta
+    fw_ver TEXT                         -- Versione firmware ESP32
 );
 
 -- Tabella aggregata giornaliera (1 record per giorno, calcoli rapidi per la PWA)
@@ -26,6 +30,9 @@ CREATE TABLE IF NOT EXISTS daily_summaries (
     v_bat_max REAL,                     -- Tensione massima registrata batteria (V)
     avg_cloud REAL,                     -- Nuvolosità media giornaliera
     t_box_max REAL,                     -- Temperatura massima quadro (°C)
+    h_box_max REAL,                     -- Umidità massima quadro (%)
+    avg_load_pwm REAL DEFAULT 0,        -- Duty cycle medio giornaliero carico (0.00 - 1.00)
+    load_cut_count INTEGER DEFAULT 0,   -- Numero di slot (10m) in protezione LVD
     anomaly_count INTEGER DEFAULT 0     -- Numero di misurazioni con is_valid = false
 );
 
