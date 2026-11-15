@@ -171,6 +171,7 @@ sensor:
       name: "Pressione Quadretto"
       id: press_quadretto
       oversampling: 16x
+    heater: null
     update_interval: ${sensor_update_interval}
 
   - platform: template
