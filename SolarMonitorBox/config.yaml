@@ -8,7 +8,7 @@ substitutions:
   # ----------------------------------------------------------------------------
   # 0. Versione Firmware (major.minor.compile)
   # ----------------------------------------------------------------------------
-  firmware_version: "1.0.3"
+  firmware_version: "1.0.4"
 
   # ----------------------------------------------------------------------------
   # 1. Carico PWM (MOSFET & Striscia LED)
@@ -54,3 +54,18 @@ substitutions:
   # Soglie massime di validità per sensori (evita falsi scarti durante carica LiFePO4)
   battery_voltage_max: "16.0"
   panel_voltage_max: "60.0"
+
+  # ----------------------------------------------------------------------------
+  # 7. Simulatore Carico Smart & Salvaguardia Batteria (Default Runtime)
+  # ----------------------------------------------------------------------------
+  smart_load_update_interval: "30s"
+  smart_adaptive_default: "true"
+  led_voltage_limit_default: "true"
+  led_target_voltage_default: "12.0"
+  cutoff_voltage_default: "12.60"
+  recovery_voltage_default: "12.90"
+  pwm_night_default: "5"
+  pwm_morning_default: "25"
+  pwm_day_default: "20"
+  pwm_evening_default: "80"
+  pwm_late_default: "15"

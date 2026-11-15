@@ -5,10 +5,6 @@ esphome:
   project:
     name: "giuspo.solar-monitor-box"
     version: "${firmware_version}"
-  on_boot:
-    priority: 600.0
-    then:
-      - script.execute: fetch_location
 
 substitutions:
   use_secrets_location: !secret use_secrets_location
@@ -75,6 +71,30 @@ globals:
     type: bool
     restore_value: false
     initial_value: 'false'
+  - id: load_cutoff_active
+    type: bool
+    restore_value: false
+    initial_value: 'false'
+  - id: low_voltage_count
+    type: int
+    restore_value: false
+    initial_value: '0'
+  - id: current_pwm_duty
+    type: float
+    restore_value: false
+    initial_value: '0.0'
+  - id: manual_pwm_target
+    type: float
+    restore_value: false
+    initial_value: '0.0'
+  - id: pwm_sum
+    type: float
+    restore_value: false
+    initial_value: '0.0'
+  - id: pwm_samples
+    type: int
+    restore_value: false
+    initial_value: '0'
 
 # ABILITIAMO LE RICHIESTE HTTP
 http_request:
@@ -94,6 +114,7 @@ sensor:
     i2c_id: i2c_solar
     # Shunt interno per range ±10 A (5 mΩ)
     shunt_resistance: 0.005 ohm
+    max_current: 10.0
     bus_voltage:
       name: "Tensione Pannello"
       id: panel_voltage
@@ -152,6 +173,28 @@ sensor:
       oversampling: 16x
     update_interval: ${sensor_update_interval}
 
+  - platform: template
+    name: "PWM Carico Effettivo"
+    id: pwm_effective_sensor
+    entity_category: diagnostic
+    unit_of_measurement: "%"
+    accuracy_decimals: 1
+    update_interval: 10s
+    lambda: |-
+      return id(current_pwm_duty) * 100.0f;
+  - platform: template
+    name: "PWM Carico Medio 10m"
+    id: pwm_avg_10m_sensor
+    entity_category: diagnostic
+    unit_of_measurement: "%"
+    accuracy_decimals: 1
+    update_interval: 30s
+    lambda: |-
+      if (id(pwm_samples) > 0) {
+        return (id(pwm_sum) / (float)id(pwm_samples)) * 100.0f;
+      }
+      return id(current_pwm_duty) * 100.0f;
+
 # Configurazione I2C per INA226
 i2c:
   - id: i2c_solar
@@ -177,6 +220,15 @@ output:
     pin: ${load_pwm_pin}
     id: load_pwm_output
     frequency: ${load_pwm_frequency}
+  - platform: template
+    id: virtual_manual_load_output
+    type: float
+    write_action:
+      - lambda: |-
+          id(manual_pwm_target) = state;
+          if (!id(smart_load_enabled).state) {
+            id(apply_smart_load)->execute();
+          }
 
 # Define binary lights using the outputs
 light:
@@ -190,8 +242,10 @@ light:
     id: adafruit_status_led
   - platform: monochromatic
     name: "Test Carico LED"
-    output: load_pwm_output
+    output: virtual_manual_load_output
     id: test_load_led
+    gamma_correct: 1.0
+    default_transition_length: 0s
 
 web_server:
   port: ${web_server_port}
@@ -205,6 +259,131 @@ text_sensor:
     update_interval: 60s
     lambda: |-
       return std::string("${firmware_version}");
+
+switch:
+  - platform: template
+    name: "Smart Load Automatico"
+    id: smart_load_enabled
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+    on_turn_on:
+      - script.execute: apply_smart_load
+    on_turn_off:
+      - script.execute: apply_smart_load
+  - platform: template
+    name: "Limitatore Tensione 12V LED"
+    id: led_voltage_limit_enabled
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+    on_turn_on:
+      - script.execute: apply_smart_load
+    on_turn_off:
+      - script.execute: apply_smart_load
+
+number:
+  - platform: template
+    name: "Soglia Cut-off Batteria (V)"
+    id: cfg_cutoff_voltage
+    optimistic: true
+    restore_value: true
+    initial_value: ${cutoff_voltage_default}
+    min_value: 11.8
+    max_value: 13.0
+    step: 0.05
+    unit_of_measurement: "V"
+    mode: box
+  - platform: template
+    name: "Soglia Recovery Batteria (V)"
+    id: cfg_recovery_voltage
+    optimistic: true
+    restore_value: true
+    initial_value: ${recovery_voltage_default}
+    min_value: 12.2
+    max_value: 13.5
+    step: 0.05
+    unit_of_measurement: "V"
+    mode: box
+  - platform: template
+    name: "Tensione Target LED (V)"
+    id: cfg_led_target_voltage
+    optimistic: true
+    restore_value: true
+    initial_value: ${led_target_voltage_default}
+    min_value: 10.5
+    max_value: 13.5
+    step: 0.1
+    unit_of_measurement: "V"
+    mode: box
+    on_value:
+      - script.execute: apply_smart_load
+  - platform: template
+    name: "PWM Notte 00:00-06:30 (%)"
+    id: cfg_pwm_night
+    optimistic: true
+    restore_value: true
+    initial_value: ${pwm_night_default}
+    min_value: 0
+    max_value: 100
+    step: 5
+    unit_of_measurement: "%"
+    on_value:
+      - script.execute: apply_smart_load
+  - platform: template
+    name: "PWM Mattina 06:30-09:00 (%)"
+    id: cfg_pwm_morning
+    optimistic: true
+    restore_value: true
+    initial_value: ${pwm_morning_default}
+    min_value: 0
+    max_value: 100
+    step: 5
+    unit_of_measurement: "%"
+    on_value:
+      - script.execute: apply_smart_load
+  - platform: template
+    name: "PWM Giorno 09:00-18:30 (%)"
+    id: cfg_pwm_day
+    optimistic: true
+    restore_value: true
+    initial_value: ${pwm_day_default}
+    min_value: 0
+    max_value: 100
+    step: 5
+    unit_of_measurement: "%"
+    on_value:
+      - script.execute: apply_smart_load
+  - platform: template
+    name: "PWM Sera 18:30-21:30 (%)"
+    id: cfg_pwm_evening
+    optimistic: true
+    restore_value: true
+    initial_value: ${pwm_evening_default}
+    min_value: 0
+    max_value: 100
+    step: 5
+    unit_of_measurement: "%"
+    on_value:
+      - script.execute: apply_smart_load
+  - platform: template
+    name: "PWM Tarda Sera 21:30-23:59 (%)"
+    id: cfg_pwm_late
+    optimistic: true
+    restore_value: true
+    initial_value: ${pwm_late_default}
+    min_value: 0
+    max_value: 100
+    step: 5
+    unit_of_measurement: "%"
+    on_value:
+      - script.execute: apply_smart_load
+
+binary_sensor:
+  - platform: template
+    name: "Protezione Batteria (Load Cut)"
+    id: load_cut_sensor
+    entity_category: diagnostic
+    lambda: |-
+      return id(load_cutoff_active);
 
 # Sincronizzazione orario
 time:
@@ -220,12 +399,12 @@ time:
         minutes: /1
         then:
           - lambda: |-
-              ESP_LOGI("SNTP", "Orario sincronizzato: %lld (firmware v2.2)", (long long)id(sntp_time).now().timestamp);
+              ESP_LOGI("SNTP", "Orario sincronizzato: %lld (firmware v${firmware_version})", (long long)id(sntp_time).now().timestamp);
     on_time_sync:
       then:
         - lambda: |-
             if (id(sntp_time).now().is_valid()) {
-              ESP_LOGI("SNTP", "Orario sincronizzato: %lld (firmware v2.2)", (long long)id(sntp_time).now().timestamp);
+              ESP_LOGI("SNTP", "Orario sincronizzato: %lld (firmware v${firmware_version})", (long long)id(sntp_time).now().timestamp);
             } else {
               ESP_LOGE("SNTP", "Errore di sincronizzazione SNTP. Controllare la connettività.");
             }
@@ -254,7 +433,6 @@ script:
   # Adafruit upload success indication
   - id: adafruit_ok
     then:
-      - light.turn_off: wifi_status_led
       - repeat:
           count: 2
           then:
@@ -356,213 +534,345 @@ script:
   - id: send_to_adafruit
     mode: queued
     then:
+      - if:
+          condition:
+            - lambda: |-
+                auto now_obj = id(sntp_time).now();
+                return now_obj.is_valid() && now_obj.timestamp >= 1609459200;
+          else:
+            - lambda: |-
+                ESP_LOGW("ADAFRUIT", "SNTP non sincronizzato o timestamp troppo vecchio, skip invio dati");
+          then:
+            - http_request.post:
+                url: ${adafruit_full_url}
+                request_headers:
+                  X-AIO-Key: !secret adafruit_aio_key
+                  Content-Type: "application/json"
+                capture_response: true
+                body: !lambda |-
+                  auto now_obj = id(sntp_time).now();
+                  time_t now = now_obj.timestamp;
+
+                  // Dati pannello solare
+                  float v_f = -1.0f;
+                  float i_f = -1.0f;
+                  float w_f = -1.0f;
+                  bool valid_f = true;
+
+                  // Dati batteria
+                  float v_b = -1.0f;
+                  float i_b = -1.0f;
+                  float w_b = -1.0f;
+                  bool valid_b = true;
+
+                  int rssi_i = -1;
+
+                  // --- Raccolta Dati Pannello Solare ---
+                  if(id(panel_voltage).has_state())
+                  {
+                    v_f = id(panel_voltage).state;
+                    if(std::isnan(v_f) || v_f < 0.0f || v_f > 60.0f)
+                    {
+                      ESP_LOGW("ADAFRUIT", "Voltage Pannello out of range: %.2fV", v_f);
+                      v_f = -1.0f;
+                      valid_f = false;
+                    }
+                  } else { valid_f = false; }
+
+                  if(id(panel_current).has_state())
+                  {
+                    i_f = id(panel_current).state;
+                    if(std::isnan(i_f) || i_f < -10.0f || i_f > 10.0f)
+                    {
+                      ESP_LOGW("ADAFRUIT", "Current Pannello out of range: %.2fA", i_f);
+                      i_f = -1.0f;
+                      valid_f = false;
+                    }
+                  } else { valid_f = false; }
+
+                  if(id(panel_power).has_state())
+                  {
+                    w_f = id(panel_power).state;
+                    if (std::isnan(w_f) || w_f < 0.0f || w_f > 300.0f) {
+                      ESP_LOGW("ADAFRUIT", "Power Pannello out of range: %.2fW", w_f);
+                      w_f = -1.0f;
+                      valid_f = false;
+                    }
+                  } else { valid_f = false; }
+
+                  // --- Raccolta Dati Batteria ---
+                  if(id(battery_voltage).has_state())
+                  {
+                    v_b = id(battery_voltage).state;
+                    if(std::isnan(v_b) || v_b < 0.0f || v_b > ${battery_voltage_max})
+                    {
+                      ESP_LOGW("ADAFRUIT", "Voltage Batteria out of range: %.2fV", v_b);
+                      v_b = -1.0f;
+                      valid_b = false;
+                    }
+                  } else { valid_b = false; }
+
+                  if(id(battery_current).has_state())
+                  {
+                    i_b = id(battery_current).state;
+                    if(std::isnan(i_b) || i_b < -10.0f || i_b > 10.0f)
+                    {
+                      ESP_LOGW("ADAFRUIT", "Current Batteria out of range: %.2fA", i_b);
+                      i_b = -1.0f;
+                      valid_b = false;
+                    }
+                  } else { valid_b = false; }
+
+                  if(id(battery_power).has_state())
+                  {
+                    w_b = id(battery_power).state;
+                    if (std::isnan(w_b) || w_b < -100.0f || w_b > 100.0f) {
+                      ESP_LOGW("ADAFRUIT", "Power Batteria out of range: %.2fW", w_b);
+                      w_b = -1.0f;
+                      valid_b = false;
+                    }
+                  } else { valid_b = false; }
+
+                  // --- Raccolta RSSI ---
+                  if(id(rssi_signal).has_state())
+                  {
+                    rssi_i = (int)id(rssi_signal).state;
+                  } else { valid_f = false; valid_b = false; }
+
+                  // --- Raccolta Temperatura Quadretto ---
+                  float temp_c = id(last_valid_temp);
+                  if(id(temp_quadretto).has_state())
+                  {
+                    float current_temp = id(temp_quadretto).state;
+                    if(!std::isnan(current_temp) && current_temp >= -40.0f && current_temp <= 85.0f)
+                    {
+                      temp_c = current_temp;
+                      id(last_valid_temp) = current_temp;
+                    } else {
+                      ESP_LOGW("ADAFRUIT", "Temperatura anomala o fuori range: %.2f°C", current_temp);
+                    }
+                  }
+                  if (temp_c < -50.0f) {
+                    temp_c = -1.0f;
+                  }
+
+                  // --- Raccolta Umidità Quadretto ---
+                  float hum_pct = id(last_valid_hum);
+                  if(id(hum_quadretto).has_state())
+                  {
+                    float current_hum = id(hum_quadretto).state;
+                    if(!std::isnan(current_hum) && current_hum >= 0.0f && current_hum <= 100.0f)
+                    {
+                      hum_pct = current_hum;
+                      id(last_valid_hum) = current_hum;
+                    } else {
+                      ESP_LOGW("ADAFRUIT", "Umidità anomala o fuori range: %.2f%%", current_hum);
+                    }
+                  }
+                  if (hum_pct < 0.0f) {
+                    hum_pct = -1.0f;
+                  }
+
+                  // --- Logica di Coerenza Fisica (P = V * I) ---
+                  if(valid_f && v_f > 0 && i_f > 0 && w_f > 0)
+                  {
+                    float calculated_power = v_f * i_f;
+                    float power_diff = fabs(w_f - calculated_power);
+                    if(power_diff > 10.0f) {
+                      ESP_LOGW("ADAFRUIT", "Power mismatch Pannello: %.2fW vs calc %.2fW. Data marked invalid.", w_f, calculated_power);
+                      valid_f = false;
+                    }
+                  }
+                  if(valid_b && v_b > 0 && i_b > 0 && w_b > 0)
+                  {
+                    float calculated_power = v_b * i_b;
+                    float power_diff = fabs(w_b - calculated_power);
+                    if(power_diff > 10.0f) {
+                      ESP_LOGW("ADAFRUIT", "Power mismatch Batteria: %.2fW vs calc %.2fW. Data marked invalid.", w_b, calculated_power);
+                      valid_b = false;
+                    }
+                  }
+                  // -------------------------------------------------------
+
+                  char v_str[10], i_str[10], w_str[10];
+                  snprintf(v_str, sizeof(v_str), "%.2f", v_f);
+                  // Use three decimal places for current to capture small values (e.g., 0.005 A)
+                  snprintf(i_str, sizeof(i_str), "%.3f", i_f);
+                  snprintf(w_str, sizeof(w_str), "%.3f", w_f);
+
+                  // Combina la validità dei due sensori
+                  bool overall_valid = valid_f && valid_b;
+
+                  char v_b_str[10], i_b_str[10], w_b_str[10];
+                  snprintf(v_b_str, sizeof(v_b_str), "%.2f", v_b);
+                  snprintf(i_b_str, sizeof(i_b_str), "%.3f", i_b);
+                  snprintf(w_b_str, sizeof(w_b_str), "%.3f", w_b);
+
+                  char t_str[10];
+                  snprintf(t_str, sizeof(t_str), "%.2f", temp_c);
+
+                  char h_str[10];
+                  snprintf(h_str, sizeof(h_str), "%.2f", hum_pct);
+
+                  float cloud_f = id(cloud_cover_val);
+                  char cloud_str[10];
+                  snprintf(cloud_str, sizeof(cloud_str), "%.2f", cloud_f);
+
+                  float pwm_avg = (id(pwm_samples) > 0) ? (id(pwm_sum) / (float)id(pwm_samples)) : id(current_pwm_duty);
+                  if (pwm_avg < 0.0f) pwm_avg = 0.0f;
+                  if (pwm_avg > 1.0f) pwm_avg = 1.0f;
+                  char pwm_str[10];
+                  snprintf(pwm_str, sizeof(pwm_str), "%.2f", pwm_avg);
+                  bool load_cut_b = id(load_cutoff_active);
+
+                  // Build payload as a JSON string inside the "value" field (required by Adafruit IO JSON feed)
+                  char json_buffer[1024];
+                  snprintf(json_buffer, sizeof(json_buffer),
+                    "{\"value\":\"{\\\"tstamp\\\":%lld,\\\"v_pan\\\":%s,\\\"i_pan\\\":%s,\\\"w_pan\\\":%s,\\\"v_bat\\\":%s,\\\"i_bat\\\":%s,\\\"w_bat\\\":%s,\\\"rssi\\\":%d,\\\"valid\\\":%s,\\\"t_box\\\":%s,\\\"h_box\\\":%s,\\\"cloud\\\":%s,\\\"pwm\\\":%s,\\\"load_cut\\\":%s,\\\"fw_ver\\\":\\\"%s\\\"}\"}",
+                    (long long)now,
+                    v_str,
+                    i_str,
+                    w_str,
+                    v_b_str,
+                    i_b_str,
+                    w_b_str,
+                    rssi_i,
+                    overall_valid ? "true" : "false",
+                    t_str,
+                    h_str,
+                    cloud_str,
+                    pwm_str,
+                    load_cut_b ? "true" : "false",
+                    "${firmware_version}");
+
+                  ESP_LOGI("ADAFRUIT", "Body inviato (Lat: %s, Lon: %s): %s", "${sec_lat}", "${sec_lon}", json_buffer);
+                  return std::string(json_buffer);
+                on_response:
+                  then:
+                    - if:
+                        condition:
+                          - lambda: 'return response->status_code >= 200 && response->status_code < 300;'
+                        then:
+                          - lambda: |-
+                              id(pwm_sum) = 0.0f;
+                              id(pwm_samples) = 0;
+                          - script.execute: adafruit_ok
+                        else:
+                          - lambda: |-
+                              ESP_LOGW("ADAFRUIT", "Invio Adafruit fallito, HTTP status: %d", response->status_code);
+
+  - id: apply_smart_load
+    mode: single
+    then:
       - lambda: |-
-          auto now_obj = id(sntp_time).now();
-          // Controllo robusto: verifica validità e timestamp non troppo vecchio (dopo Gennaio 2021)
-          if(!now_obj.is_valid() || now_obj.timestamp < 1609459200)
-          {
-            ESP_LOGW("ADAFRUIT", "SNTP non sincronizzato o timestamp troppo vecchio, skip invio dati");
+          float v_bat = id(battery_voltage).has_state() ? id(battery_voltage).state : -1.0f;
+          float w_pan = id(panel_power).has_state() ? id(panel_power).state : 0.0f;
+
+          // Sicurezza: se la tensione batteria non è ancora disponibile/valida, mantieni carico spento
+          if (v_bat <= 0.0f || std::isnan(v_bat)) {
+            id(load_pwm_output)->set_level(0.0f);
+            id(current_pwm_duty) = 0.0f;
             return;
           }
-      - http_request.post:
-          url: ${adafruit_full_url}
-          request_headers:
-            X-AIO-Key: !secret adafruit_aio_key
-            Content-Type: "application/json"
-          body: !lambda |-
+
+          // 1. Calcolo PWM Target
+          float target = 0.0f;
+          if (id(load_cutoff_active)) {
+            target = 0.0f;
+          } else if (!id(smart_load_enabled).state) {
+            target = id(manual_pwm_target);
+          } else {
             auto now_obj = id(sntp_time).now();
-            time_t now = now_obj.timestamp;
-
-            // Dati pannello solare
-            float v_f = -1.0f;
-            float i_f = -1.0f;
-            float w_f = -1.0f;
-            bool valid_f = true;
-
-            // Dati batteria
-            float v_b = -1.0f;
-            float i_b = -1.0f;
-            float w_b = -1.0f;
-            bool valid_b = true;
-
-            int rssi_i = -1;
-
-            // --- Raccolta Dati Pannello Solare ---
-            if(id(panel_voltage).has_state())
-            {
-              v_f = id(panel_voltage).state;
-              if(std::isnan(v_f) || v_f < 0.0f || v_f > 60.0f)
-              {
-                ESP_LOGW("ADAFRUIT", "Voltage Pannello out of range: %.2fV", v_f);
-                v_f = -1.0f;
-                valid_f = false;
+            if (now_obj.is_valid()) {
+              int mins = now_obj.hour * 60 + now_obj.minute;
+              if (mins < 390) {          // 00:00 - 06:30
+                target = id(cfg_pwm_night).state / 100.0f;
+              } else if (mins < 540) {   // 06:30 - 09:00
+                target = id(cfg_pwm_morning).state / 100.0f;
+              } else if (mins < 1110) {  // 09:00 - 18:30
+                target = id(cfg_pwm_day).state / 100.0f;
+              } else if (mins < 1290) {  // 18:30 - 21:30
+                target = id(cfg_pwm_evening).state / 100.0f;
+              } else {                   // 21:30 - 23:59
+                target = id(cfg_pwm_late).state / 100.0f;
               }
-            } else { valid_f = false; }
-
-            if(id(panel_current).has_state())
-            {
-              i_f = id(panel_current).state;
-              if(std::isnan(i_f) || i_f < -10.0f || i_f > 10.0f)
-              {
-                ESP_LOGW("ADAFRUIT", "Current Pannello out of range: %.2fA", i_f);
-                i_f = -1.0f;
-                valid_f = false;
-              }
-            } else { valid_f = false; }
-
-            if(id(panel_power).has_state())
-            {
-              w_f = id(panel_power).state;
-              if (std::isnan(w_f) || w_f < 0.0f || w_f > 300.0f) {
-                ESP_LOGW("ADAFRUIT", "Power Pannello out of range: %.2fW", w_f);
-                w_f = -1.0f;
-                valid_f = false;
-              }
-            } else { valid_f = false; }
-
-            // --- Raccolta Dati Batteria ---
-            if(id(battery_voltage).has_state())
-            {
-              v_b = id(battery_voltage).state;
-              if(std::isnan(v_b) || v_b < 0.0f || v_b > ${battery_voltage_max})
-              {
-                ESP_LOGW("ADAFRUIT", "Voltage Batteria out of range: %.2fV", v_b);
-                v_b = -1.0f;
-                valid_b = false;
-              }
-            } else { valid_b = false; }
-
-            if(id(battery_current).has_state())
-            {
-              i_b = id(battery_current).state;
-              if(std::isnan(i_b) || i_b < -10.0f || i_b > 10.0f)
-              {
-                ESP_LOGW("ADAFRUIT", "Current Batteria out of range: %.2fA", i_b);
-                i_b = -1.0f;
-                valid_b = false;
-              }
-            } else { valid_b = false; }
-
-            if(id(battery_power).has_state())
-            {
-              w_b = id(battery_power).state;
-              if (std::isnan(w_b) || w_b < -100.0f || w_b > 100.0f) {
-                ESP_LOGW("ADAFRUIT", "Power Batteria out of range: %.2fW", w_b);
-                w_b = -1.0f;
-                valid_b = false;
-              }
-            } else { valid_b = false; }
-
-            // --- Raccolta RSSI ---
-            if(id(rssi_signal).has_state())
-            {
-              rssi_i = (int)id(rssi_signal).state;
-            } else { valid_f = false; valid_b = false; }
-
-            // --- Raccolta Temperatura Quadretto ---
-            float temp_c = id(last_valid_temp);
-            if(id(temp_quadretto).has_state())
-            {
-              float current_temp = id(temp_quadretto).state;
-              if(!std::isnan(current_temp) && current_temp >= -40.0f && current_temp <= 85.0f)
-              {
-                temp_c = current_temp;
-                id(last_valid_temp) = current_temp;
-              } else {
-                ESP_LOGW("ADAFRUIT", "Temperatura anomala o fuori range: %.2f°C", current_temp);
-              }
-            }
-            if (temp_c < -50.0f) {
-              temp_c = -1.0f;
+            } else {
+              target = id(cfg_pwm_day).state / 100.0f;
             }
 
-            // --- Raccolta Umidità Quadretto ---
-            float hum_pct = id(last_valid_hum);
-            if(id(hum_quadretto).has_state())
-            {
-              float current_hum = id(hum_quadretto).state;
-              if(!std::isnan(current_hum) && current_hum >= 0.0f && current_hum <= 100.0f)
-              {
-                hum_pct = current_hum;
-                id(last_valid_hum) = current_hum;
-              } else {
-                ESP_LOGW("ADAFRUIT", "Umidità anomala o fuori range: %.2f%%", current_hum);
+            // Solar Boost: incremento proporzionale se W_pan > 5W e V_bat >= 13.20V
+            if (w_pan > 5.0f && v_bat >= 13.20f) {
+              float boost = (w_pan - 5.0f) * 0.05f;
+              target = fminf(1.0f, target + boost);
+            } else if (id(cloud_cover_val) >= 0.70f && w_pan <= 5.0f) {
+              // Weather Derating nelle fasce senza surplus solare attivo
+              float k_weather = fmaxf(0.40f, 1.0f - id(cloud_cover_val) * 0.50f);
+              target *= k_weather;
+            }
+          }
+
+          // 2. Limitatore Tensione 12V LED (stima V_out da V_bat + margine PWM di carica)
+          float effective = target;
+          if (id(led_voltage_limit_enabled).state) {
+            float v_out_est = v_bat + (w_pan > 5.0f ? 0.20f : 0.0f);
+            float v_target = id(cfg_led_target_voltage).state;
+            float v_f = 9.0f;
+            if (v_out_est > v_target && v_target > v_f) {
+              float d_max = (v_target * (v_target - v_f)) / (v_out_est * (v_out_est - v_f));
+              if (d_max < 0.0f) d_max = 0.0f;
+              if (d_max > 1.0f) d_max = 1.0f;
+              effective = fminf(target, d_max);
+            }
+          }
+
+          if (effective < 0.0f) effective = 0.0f;
+          if (effective > 1.0f) effective = 1.0f;
+
+          id(load_pwm_output)->set_level(effective);
+          id(current_pwm_duty) = effective;
+
+  - id: update_smart_load
+    mode: single
+    then:
+      - lambda: |-
+          float v_bat = id(battery_voltage).has_state() ? id(battery_voltage).state : -1.0f;
+          float w_pan = id(panel_power).has_state() ? id(panel_power).state : 0.0f;
+          float cutoff_v = id(cfg_cutoff_voltage).state;
+          float recovery_v = id(cfg_recovery_voltage).state;
+          if (recovery_v < cutoff_v + 0.15f) {
+            recovery_v = cutoff_v + 0.15f;
+          }
+
+          // 1. Supervisore Sicurezza Batteria (LVD con debouncing 3 campioni e isteresi su tick 30s)
+          if (v_bat > 0.0f && !std::isnan(v_bat)) {
+            if (v_bat <= cutoff_v) {
+              id(low_voltage_count) += 1;
+              if (id(low_voltage_count) >= 3 && !id(load_cutoff_active)) {
+                id(load_cutoff_active) = true;
+                ESP_LOGW("SMART_LOAD", "LVD Cut-off attivato: V_bat=%.2fV <= %.2fV", v_bat, cutoff_v);
+              }
+            } else {
+              id(low_voltage_count) = 0;
+              if (id(load_cutoff_active)) {
+                bool recover_by_voltage = (v_bat >= recovery_v);
+                bool recover_by_solar = (w_pan >= 5.0f && v_bat >= (cutoff_v + 0.15f));
+                if (recover_by_voltage || recover_by_solar) {
+                  id(load_cutoff_active) = false;
+                  ESP_LOGI("SMART_LOAD", "LVD Ripristinato: V_bat=%.2fV, W_pan=%.2fW", v_bat, w_pan);
+                }
               }
             }
-            if (hum_pct < 0.0f) {
-              hum_pct = -1.0f;
-            }
-
-            // --- Logica di Coerenza Fisica (P = V * I) ---
-            if(valid_f && v_f > 0 && i_f > 0 && w_f > 0)
-            {
-              float calculated_power = v_f * i_f;
-              float power_diff = fabs(w_f - calculated_power);
-              if(power_diff > 10.0f) {
-                ESP_LOGW("ADAFRUIT", "Power mismatch Pannello: %.2fW vs calc %.2fW. Data marked invalid.", w_f, calculated_power);
-                valid_f = false;
-              }
-            }
-            if(valid_b && v_b > 0 && i_b > 0 && w_b > 0)
-            {
-              float calculated_power = v_b * i_b;
-              float power_diff = fabs(w_b - calculated_power);
-              if(power_diff > 10.0f) {
-                ESP_LOGW("ADAFRUIT", "Power mismatch Batteria: %.2fW vs calc %.2fW. Data marked invalid.", w_b, calculated_power);
-                valid_b = false;
-              }
-            }
-            // -------------------------------------------------------
-
-            char v_str[10], i_str[10], w_str[10];
-            snprintf(v_str, sizeof(v_str), "%.2f", v_f);
-            // Use three decimal places for current to capture small values (e.g., 0.005 A)
-            snprintf(i_str, sizeof(i_str), "%.3f", i_f);
-            snprintf(w_str, sizeof(w_str), "%.3f", w_f);
-
-            // Combina la validità dei due sensori
-            bool overall_valid = valid_f && valid_b;
-
-            char v_b_str[10], i_b_str[10], w_b_str[10];
-            snprintf(v_b_str, sizeof(v_b_str), "%.2f", v_b);
-            snprintf(i_b_str, sizeof(i_b_str), "%.3f", i_b);
-            snprintf(w_b_str, sizeof(w_b_str), "%.3f", w_b);
-
-            char t_str[10];
-            snprintf(t_str, sizeof(t_str), "%.2f", temp_c);
-
-            char h_str[10];
-            snprintf(h_str, sizeof(h_str), "%.2f", hum_pct);
-
-            float cloud_f = id(cloud_cover_val);
-            char cloud_str[10];
-            snprintf(cloud_str, sizeof(cloud_str), "%.2f", cloud_f);
-
-            // Build payload as a JSON string inside the "value" field (required by Adafruit IO JSON feed)
-            char json_buffer[1024];
-            snprintf(json_buffer, sizeof(json_buffer),
-              "{\"value\":\"{\\\"tstamp\\\":%lld,\\\"v_pan\\\":%s,\\\"i_pan\\\":%s,\\\"w_pan\\\":%s,\\\"v_bat\\\":%s,\\\"i_bat\\\":%s,\\\"w_bat\\\":%s,\\\"rssi\\\":%d,\\\"valid\\\":%s,\\\"t_box\\\":%s,\\\"h_box\\\":%s,\\\"cloud\\\":%s,\\\"fw_ver\\\":\\\"%s\\\"}\"}",
-              (long long)now,
-              v_str,
-              i_str,
-              w_str,
-              v_b_str,
-              i_b_str,
-              w_b_str,
-              rssi_i,
-              overall_valid ? "true" : "false",
-              t_str,
-              h_str,
-              cloud_str,
-              "${firmware_version}");
-
-            ESP_LOGI("ADAFRUIT", "Body inviato (Lat: %s, Lon: %s): %s", "${sec_lat}", "${sec_lon}", json_buffer);
-            return std::string(json_buffer);
-      # Indica il successo dell'invio a Adafruit
-      - script.execute: adafruit_ok
+          }
+      - script.execute: apply_smart_load
+      - lambda: |-
+          id(pwm_sum) += id(current_pwm_duty);
+          id(pwm_samples) += 1;
 
 # Invia dati ogni 10 minuti
 interval:
+  - interval: ${smart_load_update_interval}
+    then:
+      - script.execute: update_smart_load
   - interval: ${adafruit_send_interval}
     then:
       - script.execute: send_to_adafruit
