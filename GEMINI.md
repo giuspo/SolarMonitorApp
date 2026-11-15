@@ -102,3 +102,10 @@ SolarMonitorApp/
 > 
 > Esamina esclusivamente i singoli file target rilevanti per il task richiesto dall'utente.
 
+> [!IMPORTANT]
+> **Aggiornamento Obbligatorio della Knowledge Base (KB)**:
+> La Knowledge Base unificata di questo progetto risiede in:
+> `/mnt/0A06C1C306C1B04D/AI-KnowledgeBase/SolarMonitorBox/solar_monitor_box_kb.md`
+> 
+> Ogni volta che vengono completate modifiche rilevanti (hardware, pinout, firmware, payload JSON, schema database D1, API backend, viste frontend o versioning) o prima di chiudere una fase/merge su `main`, aggiorna sempre quel file KB mantenendolo allineato allo stato reale del codice.
+
