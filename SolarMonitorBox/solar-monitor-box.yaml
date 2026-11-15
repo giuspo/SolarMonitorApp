@@ -127,10 +127,22 @@ sensor:
       id: battery_power
     update_interval: 30s
 
-  # Sensore di temperatura DS18B20 (bus 1-Wire su GPIO25)
-  - platform: dallas_temp
-    name: "Temperatura Quadretto"
-    id: temp_quadretto
+  # Sensore ambientale Bosch BME680 (CJMCU-680 su bus I2C solare)
+  - platform: bme680
+    i2c_id: i2c_solar
+    address: 0x77
+    temperature:
+      name: "Temperatura Quadretto"
+      id: temp_quadretto
+      oversampling: 16x
+    humidity:
+      name: "Umidità Quadretto"
+      id: hum_quadretto
+      oversampling: 16x
+    pressure:
+      name: "Pressione Quadretto"
+      id: press_quadretto
+      oversampling: 16x
     update_interval: 30s
 
 # Configurazione I2C per INA226
@@ -145,11 +157,6 @@ i2c:
     scl: GPIO19
     scan: true
     frequency: 400kHz
-
-# Bus 1-Wire per DS18B20
-one_wire:
-  - platform: gpio
-    pin: GPIO25
 
 # Define binary outputs for LEDs
 output:
