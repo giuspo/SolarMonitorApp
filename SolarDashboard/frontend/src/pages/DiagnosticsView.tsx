@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { api } from '../services/api';
 import { Thermometer, Wifi, ShieldAlert, ShieldCheck } from 'lucide-react';
 
@@ -24,20 +24,24 @@ export default function DiagnosticsView() {
       let rssiMaxTime = '--:--';
 
       records.forEach((r: any) => {
+        if (r.is_valid === 0 || r.is_valid === false) return;
+
         const time = new Date(r.datetime_local).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
-        if (r.t_box != null) {
+        if (r.t_box != null && r.t_box !== -1 && r.t_box > -40 && r.t_box < 85) {
           if (r.t_box > tboxMax) { tboxMax = r.t_box; tboxMaxTime = time; }
           if (r.t_box < tboxMin) { tboxMin = r.t_box; tboxMinTime = time; }
         }
-        if (r.rssi != null) {
+        if (r.rssi != null && r.rssi < 0) {
           if (r.rssi < rssiMin) { rssiMin = r.rssi; rssiMinTime = time; }
           if (r.rssi > rssiMax) { rssiMax = r.rssi; rssiMaxTime = time; }
         }
       });
 
+      const validRecords = records.filter((r: any) => r.is_valid !== 0 && r.is_valid !== false);
+
       setData({ 
         summary: res.summary || {}, 
-        current: records.length > 0 ? records[records.length - 1] : {},
+        current: validRecords.length > 0 ? validRecords[validRecords.length - 1] : (records.length > 0 ? records[records.length - 1] : {}),
         stats: {
             tboxMax: tboxMax === -999 ? '--' : tboxMax,
             tboxMaxTime,

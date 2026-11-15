@@ -18,12 +18,7 @@ substitutions:
   adafruit_status_led_pin: "GPIO4"
 
   # ----------------------------------------------------------------------------
-  # 3. Pin Sensore Temperatura (Dallas DS18B20 1-Wire)
-  # ----------------------------------------------------------------------------
-  temp_sensor_pin: "GPIO25"
-
-  # ----------------------------------------------------------------------------
-  # 4. Bus I2C Sensori INA226 (Pannello e Batteria)
+  # 3. Bus I2C Sensori INA226 & BME680 (Pannello e Batteria)
   # ----------------------------------------------------------------------------
   i2c_solar_sda_pin: "GPIO21"
   i2c_solar_scl_pin: "GPIO22"
@@ -32,7 +27,7 @@ substitutions:
   i2c_bus_frequency: "400kHz"
 
   # ----------------------------------------------------------------------------
-  # 5. Intervalli di Campionamento e Invio Telemetria
+  # 4. Intervalli di Campionamento e Invio Telemetria
   # ----------------------------------------------------------------------------
   sensor_update_interval: "30s"
   wifi_rssi_interval: "5s"
@@ -40,13 +35,17 @@ substitutions:
   location_update_interval: "30min"
 
   # ----------------------------------------------------------------------------
-  # 6. Rete Wi-Fi (AP di Fallback) & Sistema
+  # 5. Rete Wi-Fi (AP di Fallback) & Sistema
   # ----------------------------------------------------------------------------
   fallback_ap_ssid: "WiFi-Test Fallback"
   web_server_port: "80"
   timezone: "Europe/Rome"
 
   # ----------------------------------------------------------------------------
-  # 7. Endpoint Adafruit IO
+  # 6. Endpoint Adafruit IO
   # ----------------------------------------------------------------------------
   adafruit_full_url: "https://io.adafruit.com/api/v2/giuspo/feeds/solar-data-logger/data"
+
+  # Soglie massime di validità per sensori (evita falsi scarti durante carica LiFePO4)
+  battery_voltage_max: "16.0"
+  panel_voltage_max: "60.0"

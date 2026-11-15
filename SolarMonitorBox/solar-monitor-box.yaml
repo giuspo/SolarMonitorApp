@@ -52,6 +52,14 @@ globals:
     type: float
     restore_value: false
     initial_value: '-1.0'
+  - id: last_valid_temp
+    type: float
+    restore_value: false
+    initial_value: '-999.0'
+  - id: last_valid_hum
+    type: float
+    restore_value: false
+    initial_value: '-999.0'
   - id: device_lat
     type: float
     restore_value: false
@@ -123,10 +131,22 @@ sensor:
       id: battery_power
     update_interval: ${sensor_update_interval}
 
-  # Sensore di temperatura DS18B20 (bus 1-Wire su GPIO25)
-  - platform: dallas_temp
-    name: "Temperatura Quadretto"
-    id: temp_quadretto
+  # Sensore ambientale Bosch BME680 (CJMCU-680 su bus I2C solare)
+  - platform: bme680
+    i2c_id: i2c_solar
+    address: 0x77
+    temperature:
+      name: "Temperatura Quadretto"
+      id: temp_quadretto
+      oversampling: 16x
+    humidity:
+      name: "Umidità Quadretto"
+      id: hum_quadretto
+      oversampling: 16x
+    pressure:
+      name: "Pressione Quadretto"
+      id: press_quadretto
+      oversampling: 16x
     update_interval: ${sensor_update_interval}
 
 # Configurazione I2C per INA226
@@ -141,11 +161,6 @@ i2c:
     scl: ${i2c_battery_scl_pin}
     scan: true
     frequency: ${i2c_bus_frequency}
-
-# Bus 1-Wire per DS18B20
-one_wire:
-  - platform: gpio
-    pin: ${temp_sensor_pin}
 
 # Define binary outputs for LEDs
 output:
@@ -397,7 +412,7 @@ script:
             if(id(battery_voltage).has_state())
             {
               v_b = id(battery_voltage).state;
-              if(std::isnan(v_b) || v_b < 0.0f || v_b > 14.0f)
+              if(std::isnan(v_b) || v_b < 0.0f || v_b > ${battery_voltage_max})
               {
                 ESP_LOGW("ADAFRUIT", "Voltage Batteria out of range: %.2fV", v_b);
                 v_b = -1.0f;
@@ -433,15 +448,37 @@ script:
             } else { valid_f = false; valid_b = false; }
 
             // --- Raccolta Temperatura Quadretto ---
-            float temp_c = -1.0f;
+            float temp_c = id(last_valid_temp);
             if(id(temp_quadretto).has_state())
             {
-              temp_c = id(temp_quadretto).state;
-              if(std::isnan(temp_c) || temp_c < -55.0f || temp_c > 85.0f)
+              float current_temp = id(temp_quadretto).state;
+              if(!std::isnan(current_temp) && current_temp >= -40.0f && current_temp <= 85.0f)
               {
-                ESP_LOGW("ADAFRUIT", "Temperatura fuori range: %.2f°C", temp_c);
-                temp_c = -1.0f;
+                temp_c = current_temp;
+                id(last_valid_temp) = current_temp;
+              } else {
+                ESP_LOGW("ADAFRUIT", "Temperatura anomala o fuori range: %.2f°C", current_temp);
               }
+            }
+            if (temp_c < -50.0f) {
+              temp_c = -1.0f;
+            }
+
+            // --- Raccolta Umidità Quadretto ---
+            float hum_pct = id(last_valid_hum);
+            if(id(hum_quadretto).has_state())
+            {
+              float current_hum = id(hum_quadretto).state;
+              if(!std::isnan(current_hum) && current_hum >= 0.0f && current_hum <= 100.0f)
+              {
+                hum_pct = current_hum;
+                id(last_valid_hum) = current_hum;
+              } else {
+                ESP_LOGW("ADAFRUIT", "Umidità anomala o fuori range: %.2f%%", current_hum);
+              }
+            }
+            if (hum_pct < 0.0f) {
+              hum_pct = -1.0f;
             }
 
             // --- Logica di Coerenza Fisica (P = V * I) ---
@@ -482,6 +519,9 @@ script:
             char t_str[10];
             snprintf(t_str, sizeof(t_str), "%.2f", temp_c);
 
+            char h_str[10];
+            snprintf(h_str, sizeof(h_str), "%.2f", hum_pct);
+
             float cloud_f = id(cloud_cover_val);
             char cloud_str[10];
             snprintf(cloud_str, sizeof(cloud_str), "%.2f", cloud_f);
@@ -489,7 +529,7 @@ script:
             // Build payload as a JSON string inside the "value" field (required by Adafruit IO JSON feed)
             char json_buffer[1024];
             snprintf(json_buffer, sizeof(json_buffer),
-              "{\"value\":\"{\\\"tstamp\\\":%lld,\\\"v_pan\\\":%s,\\\"i_pan\\\":%s,\\\"w_pan\\\":%s,\\\"v_bat\\\":%s,\\\"i_bat\\\":%s,\\\"w_bat\\\":%s,\\\"rssi\\\":%d,\\\"valid\\\":%s,\\\"t_box\\\":%s,\\\"cloud\\\":%s}\"}",
+              "{\"value\":\"{\\\"tstamp\\\":%lld,\\\"v_pan\\\":%s,\\\"i_pan\\\":%s,\\\"w_pan\\\":%s,\\\"v_bat\\\":%s,\\\"i_bat\\\":%s,\\\"w_bat\\\":%s,\\\"rssi\\\":%d,\\\"valid\\\":%s,\\\"t_box\\\":%s,\\\"h_box\\\":%s,\\\"cloud\\\":%s}\"}",
               (long long)now,
               v_str,
               i_str,
@@ -500,6 +540,7 @@ script:
               rssi_i,
               overall_valid ? "true" : "false",
               t_str,
+              h_str,
               cloud_str);
 
             ESP_LOGI("ADAFRUIT", "Body inviato (Lat: %s, Lon: %s): %s", "${sec_lat}", "${sec_lon}", json_buffer);

@@ -8,8 +8,9 @@ import HistoryView from './pages/HistoryView';
 import DiagnosticsView from './pages/DiagnosticsView';
 import SettingsView from './pages/SettingsView';
 import BottomNav from './components/BottomNav';
+import { api } from './services/api';
 
-const GOOGLE_CLIENT_ID = "982771788913-gdv77dso6p1k82araami072472b57h8v.apps.googleusercontent.com";
+const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
 
 function ProtectedLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -31,6 +32,7 @@ function App() {
   };
 
   const handleLogout = () => {
+    void api.logout();
     localStorage.removeItem('apiToken');
     setToken(null);
   };

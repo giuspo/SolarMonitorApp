@@ -1,16 +1,35 @@
-﻿import { Env } from './index';
+import { Env } from './index';
 import { AdafruitPayload } from './adafruit';
 
+const MIN_TS = 1704067200; // 2024-01-01T00:00:00Z
+
+function isValidRecord(r: unknown): r is AdafruitPayload {
+  if (!r || typeof r !== 'object') return false;
+  const tstamp = (r as AdafruitPayload).tstamp;
+  const nowSec = Math.floor(Date.now() / 1000);
+  return (
+    typeof tstamp === 'number' &&
+    Number.isInteger(tstamp) &&
+    tstamp >= MIN_TS &&
+    tstamp <= nowSec + 300
+  );
+}
+
 export async function saveRecordsToD1(env: Env, records: AdafruitPayload[]) {
-  if (records.length === 0) return { inserted: 0 };
+  const validRecords = records.filter(isValidRecord);
+  if (validRecords.length < records.length) {
+    console.warn(`Scartati ${records.length - validRecords.length} record con tstamp non valido`);
+  }
+  if (validRecords.length === 0) return { inserted: 0 };
 
   const stmt = env.DB.prepare(`INSERT OR IGNORE INTO solar_records 
     (tstamp, datetime_local, v_pan, i_pan, w_pan, v_bat, i_bat, w_bat, rssi, is_valid, t_box, cloud)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)` );
 
-  const batch = records.map(record => {
+  const formatter = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Rome', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+  const batch = validRecords.map(record => {
     const date = new Date(record.tstamp * 1000);
-    const formatter = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Rome', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' });
     const formatted = formatter.format(date); // YYYY-MM-DD hh:mm:ss
     const datetime_local = formatted.replace(' ', 'T'); 
 
@@ -50,7 +69,7 @@ export async function updateDailySummary(env: Env) {
             MIN(CASE WHEN is_valid = 1 THEN v_bat END) AS v_bat_min,
             MAX(CASE WHEN is_valid = 1 THEN v_bat END) AS v_bat_max,
             AVG(NULLIF(cloud, -1)) AS avg_cloud,
-            MAX(CASE WHEN is_valid = 1 THEN t_box END) AS t_box_max,
+            MAX(CASE WHEN is_valid = 1 AND t_box != -1 THEN t_box END) AS t_box_max,
             SUM(CASE WHEN is_valid = 0 THEN 1 ELSE 0 END) AS anomaly_count
         FROM solar_records
         GROUP BY date(datetime_local)
