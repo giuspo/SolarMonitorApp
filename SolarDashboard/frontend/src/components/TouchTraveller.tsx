@@ -16,7 +16,11 @@ export interface ChartDisplayPoint {
   v_bat?: number | null;
   i_bat?: number | null;
   t_box?: number | null;
+  h_box?: number | null;
   cloud?: number | null;
+  load_pwm?: number | null;
+  load_pwm_pct?: number | null;
+  is_load_cut?: number | boolean | null;
 }
 
 export function TouchTraveller(props: TouchTravellerProps) {
@@ -72,6 +76,13 @@ export function CompactChartHud({
 
   const isCharging = (displayData.i_bat ?? 0) < 0;
   const isSidebar = layout === 'sidebar';
+  const isLoadCut = displayData.is_load_cut === 1 || displayData.is_load_cut === true;
+  const pwmText = isLoadCut
+    ? '🛑 CUT'
+    : displayData.load_pwm_pct != null
+      ? `💡 ${Math.round(displayData.load_pwm_pct)}%`
+      : '💡 --';
+  const hasValidHum = displayData.h_box != null && displayData.h_box >= 0;
 
   if (displayData.is_gap) {
     if (isSidebar) {
@@ -186,8 +197,11 @@ export function CompactChartHud({
       <div className="w-[200px] sm:w-[220px] shrink-0 self-stretch grid grid-cols-1 grid-rows-4 gap-px bg-slate-700/60 rounded-xl border border-slate-700/80 overflow-hidden">
         {/* Cell 1: Orario & Sole */}
         <div className="bg-slate-900/95 px-3 py-1.5 flex flex-col justify-center text-left">
-          <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider whitespace-nowrap leading-tight">
-            🕒 Orario
+          <div className="flex items-center justify-between gap-1 text-[10px] font-semibold text-slate-400 uppercase tracking-wider whitespace-nowrap leading-tight">
+            <span>🕒 Orario</span>
+            <span className={`text-[10px] font-semibold normal-case leading-none ${isLoadCut ? 'text-red-400' : 'text-purple-400'}`}>
+              {pwmText}
+            </span>
           </div>
           <div className="mt-1 flex items-baseline justify-between gap-1.5 tabular-nums whitespace-nowrap">
             <span className="font-bold text-slate-100 text-base sm:text-lg leading-none">
@@ -246,13 +260,14 @@ export function CompactChartHud({
             🌡️ Box & Meteo
           </div>
           <div className="mt-1 flex items-baseline justify-between gap-1.5 tabular-nums whitespace-nowrap">
-            <span className="font-bold text-slate-100 text-base sm:text-lg leading-none">
-              {displayData.t_box != null ? `${displayData.t_box.toFixed(1)} °C` : '-- °C'}
+            <span className="font-bold text-slate-100 text-sm sm:text-base leading-none">
+              {displayData.t_box != null ? `${displayData.t_box.toFixed(1)}°` : '--°'}
+              {hasValidHum ? <span className="text-cyan-400 font-medium text-xs ml-1">• {Math.round(displayData.h_box!)}%</span> : null}
             </span>
             <span className="text-[11px] sm:text-xs font-medium text-sky-400 leading-none">
               {displayData.cloud != null && displayData.cloud >= 0
-                ? `☁️ Nuv: ${Math.round(displayData.cloud * 100)}%`
-                : '☁️ Nuv: --'}
+                ? `☁️ ${Math.round(displayData.cloud * 100)}%`
+                : '☁️ --'}
             </span>
           </div>
         </div>
@@ -264,8 +279,11 @@ export function CompactChartHud({
     <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-px bg-slate-700/60 rounded-xl border border-slate-700/80 overflow-hidden">
       {/* Cell 1: Orario & Sole */}
       <div className="bg-slate-900/95 px-3.5 py-2.5 flex flex-col justify-between text-left">
-        <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider whitespace-nowrap">
-          🕒 Orario
+        <div className="flex items-center justify-between gap-1 text-[11px] font-semibold text-slate-400 uppercase tracking-wider whitespace-nowrap">
+          <span>🕒 Orario</span>
+          <span className={`text-[10px] font-semibold normal-case leading-none ${isLoadCut ? 'text-red-400' : 'text-purple-400'}`}>
+            {pwmText}
+          </span>
         </div>
         <div className="mt-1 font-bold text-slate-100 text-lg md:text-xl tabular-nums leading-tight whitespace-nowrap">
           {displayData.time}
@@ -319,6 +337,7 @@ export function CompactChartHud({
         </div>
         <div className="mt-1 font-bold text-slate-100 text-lg md:text-xl tabular-nums leading-tight whitespace-nowrap">
           {displayData.t_box != null ? `${displayData.t_box.toFixed(1)} °C` : '-- °C'}
+          {hasValidHum ? <span className="text-cyan-400 font-semibold text-xs md:text-sm ml-1.5">• 💧{Math.round(displayData.h_box!)}%</span> : null}
         </div>
         <div className="mt-0.5 text-xs md:text-sm font-medium text-sky-400 tabular-nums leading-tight whitespace-nowrap">
           {displayData.cloud != null && displayData.cloud >= 0

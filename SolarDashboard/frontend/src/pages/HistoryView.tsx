@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../services/api';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, AreaChart, Area, ReferenceLine, Legend, Brush, Line } from 'recharts';
-import { ArrowLeft, Zap, Battery, Cloud, Sun, BatteryCharging, Maximize2, Minimize2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { ArrowLeft, Zap, Battery, Cloud, Sun, BatteryCharging, Maximize2, Minimize2, ChevronLeft, ChevronRight, Lightbulb } from 'lucide-react';
 import { useContainerWidth, useChartFullscreen } from '../hooks/useContainerWidth';
 import { buildChartSeriesWithGaps, getResponsiveTicks, formatMinutesToHHMM } from '../utils/chartTimeHelpers';
 import { TouchTraveller, CompactChartHud } from '../components/TouchTraveller';
@@ -32,7 +32,7 @@ export default function HistoryView() {
   const [brushKey, setBrushKey] = useState(0);
   const [hoverData, setHoverData] = useState<any>(null);
   const [brushRange, setBrushRange] = useState<any>(null);
-  const [visible, setVisible] = useState({ w_pan: true, w_bat_charge: true, w_bat_discharge: true, sun_elevation: true });
+  const [visible, setVisible] = useState({ w_pan: true, w_bat_charge: true, w_bat_discharge: true, sun_elevation: true, load_pwm_pct: true });
   const { ref: chartContainerRef, width: containerWidth } = useContainerWidth();
 
   useEffect(() => {
@@ -89,7 +89,7 @@ export default function HistoryView() {
       const posTicks = Math.round(L_max / stepL) || 1;
       const negTicks = Math.round(Math.abs(L_min) / stepL);
       
-      const stepR = 90 / posTicks;
+      const stepR = 100 / posTicks;
 
       const leftTicks = [];
       for(let i = -negTicks; i <= posTicks; i++) leftTicks.push(Number((i * stepL).toFixed(2)));
@@ -121,6 +121,9 @@ export default function HistoryView() {
         let wh_battery_charge = 0;
         let wh_battery_discharge = 0;
         let peak_power_w = 0;
+        let pwmSum = 0;
+        let pwmCount = 0;
+        let load_cut_count = 0;
         
         slice.forEach((d: any) => {
           if (d.w_pan) wh_produced += d.w_pan / 6.0;
@@ -130,6 +133,13 @@ export default function HistoryView() {
             peak_power_w = d.w_pan;
             peakTime = d.time;
           }
+          if (!d.is_gap && d.load_pwm !== undefined && d.load_pwm !== null) {
+            pwmSum += Number(d.load_pwm);
+            pwmCount += 1;
+          }
+          if (!d.is_gap && (d.is_load_cut === 1 || d.is_load_cut === true)) {
+            load_cut_count += 1;
+          }
         });
         
         summary = {
@@ -137,7 +147,9 @@ export default function HistoryView() {
           wh_produced,
           wh_battery_charge,
           wh_battery_discharge,
-          peak_power_w
+          peak_power_w,
+          avg_load_pwm: pwmCount > 0 ? pwmSum / pwmCount : 0,
+          load_cut_count
         };
       }
     }
@@ -168,31 +180,51 @@ export default function HistoryView() {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="bg-slate-800 p-4 rounded-2xl border border-slate-700 flex flex-col justify-between">
             <div>
-              <Sun className="w-6 h-6 text-yellow-400 mb-2" />
+              <div className="flex justify-between items-start mb-2">
+                <Sun className="w-6 h-6 text-yellow-400" />
+                <span className="text-xs text-slate-400 flex items-center gap-1">
+                  <Cloud className="w-3.5 h-3.5 text-sky-400" />
+                  {summary.avg_cloud != null ? `${Math.round(summary.avg_cloud * 100)}%` : '--%'}
+                </span>
+              </div>
               <p className="text-sm text-slate-400">Pannello ({isSelection ? 'Selezione' : 'Totale'})</p>
-              <p className="text-2xl font-bold text-yellow-400 text-lg">{Math.round(summary.wh_produced || 0)} <span className="text-sm font-normal text-slate-300">Wh</span></p>
+              <p className="text-2xl font-bold text-yellow-400">{Math.round(summary.wh_produced || 0)} <span className="text-sm font-normal text-slate-300">Wh</span></p>
             </div>
             <div className="mt-2 pt-2 border-t border-slate-700/50">
               <p className="text-xs text-slate-400 flex items-center justify-between">
-                <span>Meteo Medio:</span> 
-                <span className="font-bold text-sky-400">{summary.avg_cloud ? Math.round(summary.avg_cloud * 100) : '--'}% <Cloud className="w-3 h-3 inline ml-0.5" /></span>
+                <span className="flex items-center gap-1"><Zap className="w-3.5 h-3.5 text-orange-400" /> Picco:</span>
+                <span className="font-bold text-orange-400">{Math.round(summary.peak_power_w || 0)} W <span className="text-slate-400 font-normal">({peakTime})</span></span>
               </p>
             </div>
           </div>
 
-          <div className="bg-slate-800 p-4 rounded-2xl border border-slate-700 flex flex-col justify-between">
-            <div>
-              <Zap className="w-6 h-6 text-orange-400 mb-2" />
-              <p className="text-sm text-slate-400">Picco Solare {isSelection ? '(Selezione)' : ''}</p>
-              <p className="text-2xl font-bold text-orange-400">{Math.round(summary.peak_power_w || 0)} <span className="text-sm font-normal text-slate-300">W</span></p>
-            </div>
-            <div className="mt-2 pt-2 border-t border-slate-700/50">
-              <p className="text-xs text-slate-400 flex items-center justify-between">
-                <span>Registrato alle:</span> 
-                <span className="font-bold text-slate-300 text-lg">{peakTime}</span>
-              </p>
-            </div>
-          </div>
+          {(() => {
+            const avgPwmPct = summary.avg_load_pwm != null ? Math.round(Number(summary.avg_load_pwm) * 100) : 0;
+            const cutCount = summary.load_cut_count || 0;
+            const cutMinutes = cutCount * 10;
+            return (
+              <div className="bg-slate-800 p-4 rounded-2xl border border-slate-700 flex flex-col justify-between">
+                <div>
+                  <div className="flex justify-between items-start mb-2">
+                    <Lightbulb className="w-6 h-6 text-purple-400" />
+                    <span className={`text-xs font-bold px-2 py-1 rounded-full ${cutCount > 0 ? 'text-amber-400 bg-amber-900/40' : 'text-emerald-400 bg-emerald-900/40'}`}>
+                      {cutCount > 0 ? `🛡️ ${cutCount} cut-off` : 'Protetto'}
+                    </span>
+                  </div>
+                  <p className="text-sm text-slate-400">Carico Smart {isSelection ? '(Selezione)' : '(Media)'}</p>
+                  <p className="text-2xl font-bold text-purple-400">{avgPwmPct} <span className="text-sm font-normal text-slate-300">%</span></p>
+                </div>
+                <div className="mt-2 pt-2 border-t border-slate-700/50">
+                  <p className="text-xs text-slate-400 flex items-center justify-between">
+                    <span>Protezione LVD:</span>
+                    <span className={`font-bold ${cutMinutes > 0 ? 'text-amber-400' : 'text-emerald-400'}`}>
+                      {cutMinutes > 0 ? `${cutMinutes} min` : '0 min'}
+                    </span>
+                  </p>
+                </div>
+              </div>
+            );
+          })()}
 
           <div className="bg-slate-800 p-4 rounded-2xl border border-slate-700 flex flex-col justify-between">
             <div>
@@ -270,13 +302,14 @@ export default function HistoryView() {
                     axisLine={false}
                   />
                   <YAxis yAxisId="left" stroke="#475569" fontSize={12} tickLine={false} axisLine={false} ticks={dayDetails.leftTicks} domain={[dayDetails.L_min || 0, dayDetails.L_max || 10]} />
-                  <YAxis yAxisId="right" orientation="right" stroke="#fb923c" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(val) => `${val}°`} ticks={dayDetails.rightTicks} domain={[dayDetails.R_min || 0, dayDetails.R_max || 90]} hide={!visible.sun_elevation} />
+                  <YAxis yAxisId="right" orientation="right" stroke="#a855f7" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(val) => `${Math.round(val)}`} ticks={dayDetails.rightTicks} domain={[dayDetails.R_min || 0, dayDetails.R_max || 100]} hide={!visible.sun_elevation && !visible.load_pwm_pct} />
                   <Tooltip content={<SyncTooltip setHoverData={setHoverData} />} cursor={{stroke: '#475569', strokeWidth: 1, strokeDasharray: '3 3'}} />
                   <Legend verticalAlign="top" iconType="circle" wrapperStyle={{ fontSize: '11px', color: '#94a3b8', cursor: 'pointer', paddingBottom: '4px' }} onClick={handleLegendClick} />
                   <Area yAxisId="left" hide={!visible.w_pan} type="monotone" dataKey="w_pan" name={isMobile ? "Solare" : "Solare [W]"} stroke={visible.w_pan ? "#facc15" : "#475569"} fill="#facc15" fillOpacity={0.2} strokeWidth={3} connectNulls={false} />
                   <ReferenceLine yAxisId="left" y={0} stroke="#475569" strokeDasharray="3 3" />
                   <Area yAxisId="left" hide={!visible.w_bat_charge} type="monotone" dataKey="w_bat_charge" name={isMobile ? "Ricarica" : "Batt. in Ricarica [W]"} stroke={visible.w_bat_charge ? "#10b981" : "#475569"} fill="#10b981" fillOpacity={0.2} strokeWidth={3} connectNulls={false} />
                   <Area yAxisId="left" hide={!visible.w_bat_discharge} type="monotone" dataKey="w_bat_discharge" name={isMobile ? "Scarica" : "Batt. in Scarica [W]"} stroke={visible.w_bat_discharge ? "#ef4444" : "#475569"} fill="#ef4444" fillOpacity={0.2} strokeWidth={3} connectNulls={false} />
+                  <Line yAxisId="right" hide={!visible.load_pwm_pct} type="monotone" dataKey="load_pwm_pct" name={isMobile ? "PWM [%]" : "Carico PWM [%]"} stroke={visible.load_pwm_pct ? "#a855f7" : "#475569"} strokeWidth={2} dot={false} connectNulls={false} />
                   <Line yAxisId="right" hide={!visible.sun_elevation} type="monotone" dataKey="sun_elevation" name={isMobile ? "Sole [°]" : "Elevazione Sole [°]"} stroke={visible.sun_elevation ? "#fb923c" : "#475569"} strokeWidth={2} dot={false} strokeDasharray="5 5" connectNulls={true} />
                   <Brush
                     dataKey="time"

@@ -14,7 +14,12 @@ export interface ChartDataPoint {
   w_bat_charge: number | null;
   w_bat_discharge: number | null;
   t_box: number | null;
+  h_box?: number | null;
   cloud: number;
+  load_pwm?: number | null;
+  load_pwm_pct?: number | null;
+  is_load_cut?: number | boolean | null;
+  fw_ver?: string | null;
   sun_elevation: number;
   is_gap?: boolean;
   [key: string]: any;
@@ -72,6 +77,10 @@ export function buildChartSeriesWithGaps(
 
       const sunPos = getPosition(dateObj, lat, lon);
       const sun_elevation = Math.max(0, sunPos.altitude);
+      const loadPwmPct =
+        d.load_pwm !== undefined && d.load_pwm !== null
+          ? Number((Number(d.load_pwm) * 100).toFixed(1))
+          : null;
 
       return {
         ...d,
@@ -80,6 +89,7 @@ export function buildChartSeriesWithGaps(
         w_pan: wPan,
         w_bat_charge,
         w_bat_discharge,
+        load_pwm_pct: loadPwmPct,
         sun_elevation,
         is_gap: false,
       };
@@ -131,7 +141,11 @@ export function buildChartSeriesWithGaps(
             w_bat_charge: null,
             w_bat_discharge: null,
             t_box: null,
+            h_box: null,
             cloud: -1,
+            load_pwm: null,
+            load_pwm_pct: null,
+            is_load_cut: null,
             sun_elevation,
             is_gap: true,
           });

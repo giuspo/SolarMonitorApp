@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LogOut, Zap, Battery, Cloud, RefreshCw, Sun, BatteryCharging, Maximize2, Minimize2 , BatteryFull, BatteryMedium, BatteryLow, BatteryWarning } from 'lucide-react';
+import { LogOut, Zap, Battery, Cloud, RefreshCw, Sun, BatteryCharging, Maximize2, Minimize2, Lightbulb, BatteryFull, BatteryMedium, BatteryLow, BatteryWarning } from 'lucide-react';
 import { AreaChart, Area, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine, Legend, Brush } from 'recharts';
 import { api } from '../services/api';
 import { useContainerWidth, useChartFullscreen } from '../hooks/useContainerWidth';
@@ -30,7 +30,7 @@ export default function TodayView({ onLogout }: { onLogout: () => void }) {
   const [brushKey, setBrushKey] = useState(0);
   const [hoverData, setHoverData] = useState<any>(null);
   const [brushRange, setBrushRange] = useState<any>(null);
-  const [visible, setVisible] = useState({ w_pan: true, w_bat_charge: true, w_bat_discharge: true, sun_elevation: true });
+  const [visible, setVisible] = useState({ w_pan: true, w_bat_charge: true, w_bat_discharge: true, sun_elevation: true, load_pwm_pct: true });
   const { ref: chartContainerRef, width: containerWidth } = useContainerWidth();
 
   const loadData = async () => {
@@ -62,7 +62,7 @@ export default function TodayView({ onLogout }: { onLogout: () => void }) {
       const posTicks = Math.round(L_max / stepL) || 1;
       const negTicks = Math.round(Math.abs(L_min) / stepL);
       
-      const stepR = 90 / posTicks;
+      const stepR = 100 / posTicks;
 
       const leftTicks = [];
       for(let i = -negTicks; i <= posTicks; i++) leftTicks.push(Number((i * stepL).toFixed(2)));
@@ -112,6 +112,9 @@ export default function TodayView({ onLogout }: { onLogout: () => void }) {
       let wh_battery_charge = 0;
       let wh_battery_discharge = 0;
       let peak_power_w = 0;
+      let pwmSum = 0;
+      let pwmCount = 0;
+      let load_cut_count = 0;
       
       slice.forEach((d: any) => {
         // Ogni record vale 10 minuti (1/6 di ora)
@@ -122,6 +125,13 @@ export default function TodayView({ onLogout }: { onLogout: () => void }) {
           peak_power_w = d.w_pan;
           peakTime = d.time;
         }
+        if (!d.is_gap && d.load_pwm !== undefined && d.load_pwm !== null) {
+          pwmSum += Number(d.load_pwm);
+          pwmCount += 1;
+        }
+        if (!d.is_gap && (d.is_load_cut === 1 || d.is_load_cut === true)) {
+          load_cut_count += 1;
+        }
       });
       
       summary = {
@@ -129,7 +139,9 @@ export default function TodayView({ onLogout }: { onLogout: () => void }) {
         wh_produced,
         wh_battery_charge,
         wh_battery_discharge,
-        peak_power_w
+        peak_power_w,
+        avg_load_pwm: pwmCount > 0 ? pwmSum / pwmCount : 0,
+        load_cut_count
       };
     }
   }
@@ -184,39 +196,64 @@ export default function TodayView({ onLogout }: { onLogout: () => void }) {
       </header>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        {/* Card 1: Energia Totale Pannello */}
+        {/* Card 1: Pannello Solare & Picco */}
         <div className="bg-slate-800 p-4 rounded-2xl border border-slate-700 flex flex-col justify-between">
           <div>
-            <Sun className="w-6 h-6 text-yellow-400 mb-2" />
+            <div className="flex justify-between items-start mb-2">
+              <Sun className="w-6 h-6 text-yellow-400" />
+              <span className="text-xs text-slate-400 flex items-center gap-1">
+                <Cloud className="w-3.5 h-3.5 text-sky-400" />
+                {summary.avg_cloud != null ? `${Math.round(summary.avg_cloud * 100)}%` : '--%'}
+                <span className="mx-0.5 text-slate-600">•</span>
+                <span className="text-yellow-400 font-semibold">{lastRecord && lastRecord.sun_elevation != null ? `${Math.round(lastRecord.sun_elevation)}°` : '--°'}</span>
+              </span>
+            </div>
             <p className="text-sm text-slate-400">Pannello ({isSelection ? 'Selezione' : 'Totale Oggi'})</p>
-            <p className="text-2xl font-bold text-yellow-400 text-lg">{Math.round(summary.wh_produced || 0)} <span className="text-sm font-normal text-slate-300">Wh</span></p>
+            <p className="text-2xl font-bold text-yellow-400">{Math.round(summary.wh_produced || 0)} <span className="text-sm font-normal text-slate-300">Wh</span></p>
           </div>
-          <div className="mt-2 pt-2 flex flex-col gap-1 border-t border-slate-700/50">
+          <div className="mt-2 pt-2 border-t border-slate-700/50">
             <p className="text-xs text-slate-400 flex items-center justify-between">
-              <span>Meteo Medio:</span> 
-              <span className="font-bold text-sky-400">{summary.avg_cloud ? Math.round(summary.avg_cloud * 100) : '--'}% <Cloud className="w-3 h-3 inline ml-0.5" /></span>
-            </p>
-            <p className="text-xs text-slate-400 flex items-center justify-between">
-              <span>Sole (Altezza):</span> 
-              <span className="font-bold text-yellow-400">{lastRecord && lastRecord.sun_elevation != null ? Math.round(lastRecord.sun_elevation) : '--'}° <Sun className="w-3 h-3 inline ml-0.5" /></span>
+              <span className="flex items-center gap-1"><Zap className="w-3.5 h-3.5 text-orange-400" /> Picco:</span>
+              <span className="font-bold text-orange-400">{Math.round(summary.peak_power_w || 0)} W <span className="text-slate-400 font-normal">({peakTime})</span></span>
             </p>
           </div>
         </div>
 
-        {/* Card 2: Picco Pannello */}
-        <div className="bg-slate-800 p-4 rounded-2xl border border-slate-700 flex flex-col justify-between">
-          <div>
-            <Zap className="w-6 h-6 text-orange-400 mb-2" />
-            <p className="text-sm text-slate-400">Picco Solare {isSelection ? '(Selezione)' : ''}</p>
-            <p className="text-2xl font-bold text-orange-400">{Math.round(summary.peak_power_w || 0)} <span className="text-sm font-normal text-slate-300">W</span></p>
-          </div>
-          <div className="mt-2 pt-2 border-t border-slate-700/50">
-            <p className="text-xs text-slate-400 flex items-center justify-between">
-              <span>Registrato alle:</span> 
-              <span className="font-bold text-slate-300 text-lg">{peakTime}</span>
-            </p>
-          </div>
-        </div>
+        {/* Card 2: Carico Smart (PWM) */}
+        {(() => {
+          const currentPwmPct = lastRecord && lastRecord.load_pwm != null ? Math.round(Number(lastRecord.load_pwm) * 100) : null;
+          const isCutNow = lastRecord && (lastRecord.is_load_cut === 1 || lastRecord.is_load_cut === true);
+          const avgPwmPct = summary.avg_load_pwm != null ? Math.round(Number(summary.avg_load_pwm) * 100) : 0;
+          const cutMinutes = (summary.load_cut_count || 0) * 10;
+          return (
+            <div className="bg-slate-800 p-4 rounded-2xl border border-slate-700 flex flex-col justify-between">
+              <div>
+                <div className="flex justify-between items-start mb-2">
+                  <Lightbulb className={`w-6 h-6 ${isCutNow ? 'text-red-400' : 'text-purple-400'}`} />
+                  <span className={`text-xs font-bold px-2 py-1 rounded-full ${isCutNow ? 'text-red-400 bg-red-900/40' : 'text-purple-300 bg-purple-900/40'}`}>
+                    {isCutNow ? '🛑 Cut-off LVD' : (currentPwmPct != null && currentPwmPct > 0 ? 'Attivo' : 'Standby')}
+                  </span>
+                </div>
+                <p className="text-sm text-slate-400">Carico Smart (PWM)</p>
+                <p className={`text-2xl font-bold ${isCutNow ? 'text-red-400' : 'text-purple-400'}`}>
+                  {currentPwmPct != null ? currentPwmPct : '--'} <span className="text-sm font-normal text-slate-300">%</span>
+                </p>
+              </div>
+              <div className="mt-2 pt-2 flex flex-col gap-1 border-t border-slate-700/50">
+                <p className="text-xs text-slate-400 flex items-center justify-between">
+                  <span>Media {isSelection ? 'Selezione' : 'Oggi'}:</span>
+                  <span className="font-bold text-purple-300">{avgPwmPct}%</span>
+                </p>
+                <p className="text-xs text-slate-400 flex items-center justify-between">
+                  <span>Protezione LVD:</span>
+                  <span className={`font-bold ${cutMinutes > 0 ? 'text-amber-400' : 'text-emerald-400'}`}>
+                    {cutMinutes > 0 ? `${cutMinutes} min` : '0 min'}
+                  </span>
+                </p>
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Card 3: Energia Batteria */}
         <div className="bg-slate-800 p-4 rounded-2xl border border-slate-700 flex flex-col justify-between">
@@ -300,13 +337,14 @@ export default function TodayView({ onLogout }: { onLogout: () => void }) {
                   axisLine={false}
                 />
                 <YAxis yAxisId="left" stroke="#475569" fontSize={12} tickLine={false} axisLine={false} ticks={data.leftTicks} domain={[data.L_min || 0, data.L_max || 10]} />
-                <YAxis yAxisId="right" orientation="right" stroke="#fb923c" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(val) => `${val}°`} ticks={data.rightTicks} domain={[data.R_min || 0, data.R_max || 90]} hide={!visible.sun_elevation} />
+                <YAxis yAxisId="right" orientation="right" stroke="#a855f7" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(val) => `${Math.round(val)}`} ticks={data.rightTicks} domain={[data.R_min || 0, data.R_max || 100]} hide={!visible.sun_elevation && !visible.load_pwm_pct} />
                 <Tooltip content={<SyncTooltip setHoverData={setHoverData} />} cursor={{stroke: '#475569', strokeWidth: 1, strokeDasharray: '3 3'}} />
                 <Legend verticalAlign="top" iconType="circle" wrapperStyle={{ fontSize: '11px', color: '#94a3b8', cursor: 'pointer', paddingBottom: '4px' }} onClick={handleLegendClick} />
                 <Area yAxisId="left" hide={!visible.w_pan} type="monotone" dataKey="w_pan" name={isMobile ? "Solare" : "Solare [W]"} stroke={visible.w_pan ? "#facc15" : "#475569"} fill="#facc15" fillOpacity={0.2} strokeWidth={3} connectNulls={false} />
                 <ReferenceLine yAxisId="left" y={0} stroke="#475569" strokeDasharray="3 3" />
                 <Area yAxisId="left" hide={!visible.w_bat_charge} type="monotone" dataKey="w_bat_charge" name={isMobile ? "Ricarica" : "Batt. in Ricarica [W]"} stroke={visible.w_bat_charge ? "#10b981" : "#475569"} fill="#10b981" fillOpacity={0.2} strokeWidth={3} connectNulls={false} />
                 <Area yAxisId="left" hide={!visible.w_bat_discharge} type="monotone" dataKey="w_bat_discharge" name={isMobile ? "Scarica" : "Batt. in Scarica [W]"} stroke={visible.w_bat_discharge ? "#ef4444" : "#475569"} fill="#ef4444" fillOpacity={0.2} strokeWidth={3} connectNulls={false} />
+                <Line yAxisId="right" hide={!visible.load_pwm_pct} type="monotone" dataKey="load_pwm_pct" name={isMobile ? "PWM [%]" : "Carico PWM [%]"} stroke={visible.load_pwm_pct ? "#a855f7" : "#475569"} strokeWidth={2} dot={false} connectNulls={false} />
                 <Line yAxisId="right" hide={!visible.sun_elevation} type="monotone" dataKey="sun_elevation" name={isMobile ? "Sole [°]" : "Elevazione Sole [°]"} stroke={visible.sun_elevation ? "#fb923c" : "#475569"} strokeWidth={2} dot={false} strokeDasharray="5 5" connectNulls={true} />
                 <Brush
                   dataKey="time"
