@@ -11,6 +11,7 @@
 .venv/bin/python -m esphome compile solar-monitor-box.yaml
 .venv/bin/python -m esphome upload solar-monitor-box.yaml
 .venv/bin/python -m esphome logs solar-monitor-box.yaml
+.venv/bin/python -m esphome logs --device 192.168.1.10 solar-monitor-box.yaml
 .venv/bin/python -m esphome run solar-monitor-box.yaml
 
 # 3. Oppure attivando l'ambiente:
