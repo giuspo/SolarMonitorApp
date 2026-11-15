@@ -2,6 +2,9 @@
 esphome:
   name: solar-monitor-box
   friendly_name: Solar Monitor Box
+  project:
+    name: "giuspo.solar-monitor-box"
+    version: "${firmware_version}"
   on_boot:
     priority: 600.0
     then:
@@ -193,6 +196,15 @@ light:
 web_server:
   port: ${web_server_port}
   version: 2
+
+text_sensor:
+  - platform: template
+    name: "Firmware Version"
+    id: firmware_version_sensor
+    entity_category: diagnostic
+    update_interval: 60s
+    lambda: |-
+      return std::string("${firmware_version}");
 
 # Sincronizzazione orario
 time:
@@ -529,7 +541,7 @@ script:
             // Build payload as a JSON string inside the "value" field (required by Adafruit IO JSON feed)
             char json_buffer[1024];
             snprintf(json_buffer, sizeof(json_buffer),
-              "{\"value\":\"{\\\"tstamp\\\":%lld,\\\"v_pan\\\":%s,\\\"i_pan\\\":%s,\\\"w_pan\\\":%s,\\\"v_bat\\\":%s,\\\"i_bat\\\":%s,\\\"w_bat\\\":%s,\\\"rssi\\\":%d,\\\"valid\\\":%s,\\\"t_box\\\":%s,\\\"h_box\\\":%s,\\\"cloud\\\":%s}\"}",
+              "{\"value\":\"{\\\"tstamp\\\":%lld,\\\"v_pan\\\":%s,\\\"i_pan\\\":%s,\\\"w_pan\\\":%s,\\\"v_bat\\\":%s,\\\"i_bat\\\":%s,\\\"w_bat\\\":%s,\\\"rssi\\\":%d,\\\"valid\\\":%s,\\\"t_box\\\":%s,\\\"h_box\\\":%s,\\\"cloud\\\":%s,\\\"fw_ver\\\":\\\"%s\\\"}\"}",
               (long long)now,
               v_str,
               i_str,
@@ -541,7 +553,8 @@ script:
               overall_valid ? "true" : "false",
               t_str,
               h_str,
-              cloud_str);
+              cloud_str,
+              "${firmware_version}");
 
             ESP_LOGI("ADAFRUIT", "Body inviato (Lat: %s, Lon: %s): %s", "${sec_lat}", "${sec_lon}", json_buffer);
             return std::string(json_buffer);
