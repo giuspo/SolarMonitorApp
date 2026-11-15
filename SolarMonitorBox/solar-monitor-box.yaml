@@ -56,6 +56,10 @@ globals:
     type: float
     restore_value: false
     initial_value: '-999.0'
+  - id: last_valid_hum
+    type: float
+    restore_value: false
+    initial_value: '-999.0'
   - id: device_lat
     type: float
     restore_value: false
@@ -452,6 +456,23 @@ script:
               temp_c = -1.0f;
             }
 
+            // --- Raccolta Umidità Quadretto ---
+            float hum_pct = id(last_valid_hum);
+            if(id(hum_quadretto).has_state())
+            {
+              float current_hum = id(hum_quadretto).state;
+              if(!std::isnan(current_hum) && current_hum >= 0.0f && current_hum <= 100.0f)
+              {
+                hum_pct = current_hum;
+                id(last_valid_hum) = current_hum;
+              } else {
+                ESP_LOGW("ADAFRUIT", "Umidità anomala o fuori range: %.2f%%", current_hum);
+              }
+            }
+            if (hum_pct < 0.0f) {
+              hum_pct = -1.0f;
+            }
+
             // --- Logica di Coerenza Fisica (P = V * I) ---
             if(valid_f && v_f > 0 && i_f > 0 && w_f > 0)
             {
@@ -490,6 +511,9 @@ script:
             char t_str[10];
             snprintf(t_str, sizeof(t_str), "%.2f", temp_c);
 
+            char h_str[10];
+            snprintf(h_str, sizeof(h_str), "%.2f", hum_pct);
+
             float cloud_f = id(cloud_cover_val);
             char cloud_str[10];
             snprintf(cloud_str, sizeof(cloud_str), "%.2f", cloud_f);
@@ -497,7 +521,7 @@ script:
             // Build payload as a JSON string inside the "value" field (required by Adafruit IO JSON feed)
             char json_buffer[1024];
             snprintf(json_buffer, sizeof(json_buffer),
-              "{\"value\":\"{\\\"tstamp\\\":%lld,\\\"v_pan\\\":%s,\\\"i_pan\\\":%s,\\\"w_pan\\\":%s,\\\"v_bat\\\":%s,\\\"i_bat\\\":%s,\\\"w_bat\\\":%s,\\\"rssi\\\":%d,\\\"valid\\\":%s,\\\"t_box\\\":%s,\\\"cloud\\\":%s}\"}",
+              "{\"value\":\"{\\\"tstamp\\\":%lld,\\\"v_pan\\\":%s,\\\"i_pan\\\":%s,\\\"w_pan\\\":%s,\\\"v_bat\\\":%s,\\\"i_bat\\\":%s,\\\"w_bat\\\":%s,\\\"rssi\\\":%d,\\\"valid\\\":%s,\\\"t_box\\\":%s,\\\"h_box\\\":%s,\\\"cloud\\\":%s}\"}",
               (long long)now,
               v_str,
               i_str,
@@ -508,6 +532,7 @@ script:
               rssi_i,
               overall_valid ? "true" : "false",
               t_str,
+              h_str,
               cloud_str);
 
             ESP_LOGI("ADAFRUIT", "Body inviato (Lat: %s, Lon: %s): %s", "${sec_lat}", "${sec_lon}", json_buffer);
